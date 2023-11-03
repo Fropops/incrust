@@ -1,4 +1,4 @@
-# incRUST, a rust loader using direct ot indirect syscalls !
+# incRUST, a rust loader using direct or indirect syscalls !
 
 
 (!) indirect syscall in x86 could be not working on some systems because of different syscall stubs (https://gist.github.com/wbenny/b08ef73b35782a1f57069dff2327ee4d)
