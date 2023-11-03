@@ -1,20 +1,20 @@
 #[cfg(all(feature = "syscall_indirect", not(feature = "syscall_direct")))]
 use rand::seq::SliceRandom;
 
-use super::helpers::FunctionInfo;
-use super::helpers::load_nt_syscall_info;
-use super::structs::CLIENT_ID;
+use super::syscall_functions::FunctionInfo;
+use super::syscall_functions::load_nt_syscall_info;
+use super::super::structs::CLIENT_ID;
 
 // use crate::debug_info_hex;
 // use crate::debug_base_hex;
 
 // use crate::debug_info;
 // use crate::debug_info_msg;
-use crate::error::Result;
+use crate::common::error::Result;
 use crate::syscall;
 
-use super::types::HANDLE;
-use super::structs::OBJECT_ATTRIBUTES;
+use super::super::types::HANDLE;
+use super::super::structs::OBJECT_ATTRIBUTES;
 
 pub struct SyscallWrapper {
     resolver: SSNResolver,

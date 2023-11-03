@@ -19,7 +19,7 @@ macro_rules! syscall {
             let _ = $y;
             cnt += 1;
         )+
-        crate::winapi::syscall::do_syscall(ssn, addr, cnt, $($y), +)
+        crate::winapi::nt::syscall_call::do_syscall(ssn, addr, cnt, $($y), +)
     }}
 }
 

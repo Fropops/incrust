@@ -9,10 +9,8 @@ use_litcrypt!();
 pub struct HINSTANCE(pub isize);
 
 mod loader;
-mod helpers;
+mod common;
 mod winapi;
-mod error;
-mod debug;
 
 #[no_mangle]
 #[allow(non_snake_case, unused_variables)]

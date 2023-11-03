@@ -11,10 +11,8 @@ extern crate litcrypt;
 use_litcrypt!();
 
 mod loader;
-mod helpers;
+mod common;
 mod winapi;
-mod error;
-mod debug;
 
 fn main() {
     loader::do_load();
