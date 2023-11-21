@@ -26,15 +26,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "incrust"
-version = "0.1.0"
-dependencies = [
- "base64",
- "litcrypt",
- "rand",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -48,6 +39,15 @@ checksum = "5f82f92066d9d41b3a569b459b7874e67feb835507a83b7bd142ea9f56c620c7"
 dependencies = [
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "local-pe-injection"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "litcrypt",
+ "rand",
 ]
 
 [[package]]

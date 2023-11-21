@@ -18,6 +18,8 @@ pub type HINSTANCE = isize;
 //pub type PVOID = *mut ::core::ffi::c_void;
 pub type HANDLE = isize;
 
+pub type BOOL = u8;
+
 #[allow(non_camel_case_types)]
 pub type NT_STATUS = i32;
 
@@ -29,9 +31,21 @@ pub type VIRTUAL_ALLOCATION_TYPE = u32;
 #[allow(non_camel_case_types)]
 pub type PAGE_PROTECTION_FLAGS = u32;
 #[allow(non_camel_case_types)]
+pub type IMAGE_SCN_MEM_FLAGS = u32;
+#[allow(non_camel_case_types)]
 pub type THREAD_ACCESS_RIGHTS = u32;
 #[allow(non_camel_case_types)]
 pub type SYSTEM_INFORMATION_CLASS = i32;
+#[allow(non_camel_case_types)]
+pub type IMAGE_FILE_CHARACTERISTICS = u16;
+#[allow(non_camel_case_types)]
+pub type IMAGE_OPTIONAL_HEADER_MAGIC = u16;
+#[allow(non_camel_case_types)]
+pub type IMAGE_SECTION_CHARACTERISTICS = u32;
+#[allow(non_camel_case_types)]
+pub type BASE_RELOCATION_ENTRY = u16;
+#[allow(non_camel_case_types)]
+pub type BASE_RELOCATION_TYPE = u16;
 
 #[allow(dead_code)]
 extern "C" {
@@ -237,6 +251,7 @@ pub type IMAGE_NT_HEADERS = IMAGE_NT_HEADERS64;
 #[cfg(target_arch = "x86_64")]
 pub type IMAGE_OPTIONAL_HEADER = IMAGE_OPTIONAL_HEADER64;
 
+
 #[cfg(target_arch = "x86")]
 use super::structs::IMAGE_NT_HEADERS32;
 #[cfg(target_arch = "x86")]
@@ -247,3 +262,18 @@ pub type IMAGE_NT_HEADERS = IMAGE_NT_HEADERS32;
 #[allow(non_camel_case_types)]
 #[cfg(target_arch = "x86")]
 pub type IMAGE_OPTIONAL_HEADER = IMAGE_OPTIONAL_HEADER32;
+
+
+
+#[cfg(target_arch = "x86_64")]
+use super::structs::IMAGE_THUNK_DATA64;
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+pub type IMAGE_THUNK_DATA = IMAGE_THUNK_DATA64;
+
+#[cfg(target_arch = "x86")]
+use super::structs::IMAGE_THUNK_DATA32;
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub type IMAGE_THUNK_DATA = IMAGE_THUNK_DATA32;
+

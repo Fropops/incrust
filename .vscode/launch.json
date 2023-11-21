@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'incrust'",
+            "name": "Debug executable 'local-pe-injection'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=incrust",
-                    "--package=incrust"
+                    "--bin=local-pe-injection",
+                    "--package=local-pe-injection"
                 ],
                 "filter": {
-                    "name": "incrust",
+                    "name": "local-pe-injection",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'incrust'",
+            "name": "Debug unit tests in executable 'local-pe-injection'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=incrust",
-                    "--package=incrust"
+                    "--bin=local-pe-injection",
+                    "--package=local-pe-injection"
                 ],
                 "filter": {
-                    "name": "incrust",
+                    "name": "local-pe-injection",
                     "kind": "bin"
                 }
             },

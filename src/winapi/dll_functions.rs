@@ -130,8 +130,9 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
         function_ordinals_array = (module_handle as usize + (*export_directory).AddressOfNameOrdinals as usize) as usize;
         
         //debug_info!((*export_directory).NumberOfFunctions);
-        let first_ord = *(function_ordinals_array as *const u16) as u32;
-        for _index in first_ord..(*export_directory).NumberOfFunctions { 
+        // let first_ord = *(function_ordinals_array as *const u16) as u32; //Was here to correct a 32bit ntdll loading issue in win7
+        // for _index in first_ord..(*export_directory).NumberOfFunctions { 
+        for _index in 0..(*export_directory).NumberOfFunctions { 
             let name_offest: u32 = *(function_name_array as *const u32);
 
             let fun_name = std::ffi::CStr::from_ptr(
@@ -151,6 +152,49 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
 
             function_name_array = function_name_array + std::mem::size_of::<u32>() as usize;
             function_ordinals_array = function_ordinals_array + std::mem::size_of::<u16>() as usize;
+        }
+        return 0;
+    }
+}
+
+
+
+#[allow(dead_code)]
+pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index: u16) -> usize {
+    let dos_headers: *const IMAGE_DOS_HEADER;
+    let nt_headers: *const IMAGE_NT_HEADERS;
+    let optional_header: * const IMAGE_OPTIONAL_HEADER;
+    let data_directory: *const IMAGE_DATA_DIRECTORY;
+    let export_directory: *const IMAGE_EXPORT_DIRECTORY;
+    let function_address_array: usize;
+    
+    unsafe {
+        dos_headers = module_handle as *const IMAGE_DOS_HEADER;
+        if (*dos_headers).e_magic != IMAGE_DOS_SIGNATURE {
+            debug_error!("Invalid dos signature!");
+        }
+
+        nt_headers = (module_handle as usize + (*dos_headers).e_lfanew as usize) as *const IMAGE_NT_HEADERS;
+        if (*nt_headers).Signature != IMAGE_NT_SIGNATURE {
+            debug_error!("Invalid NT signature!");
+        }
+
+        optional_header	= &(*nt_headers).OptionalHeader;
+        if (*optional_header).Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC {
+            debug_error!("Invalid Optional Header signature!");
+        }
+
+        data_directory = (&(*optional_header).DataDirectory[0]) as *const IMAGE_DATA_DIRECTORY;
+        export_directory = (module_handle as usize + (*data_directory).VirtualAddress as usize) as *const IMAGE_EXPORT_DIRECTORY;
+        function_address_array = (module_handle as usize + (*export_directory).AddressOfFunctions as usize) as usize;
+        
+        for index in 1..(*export_directory).NumberOfFunctions as u16 { 
+            if index == ordinal_index {
+                let address_ptr = function_address_array + (index - 1) as usize * (std::mem::size_of::<u32>() as usize);
+                //debug_info_hex!(*(address_ptr as *const u32) as usize);
+                let fun_addr = module_handle as usize + *(address_ptr as *const u32) as usize;
+                return fun_addr;
+            }
         }
         return 0;
     }

@@ -1,3 +1,4 @@
+use super::types::IMAGE_SECTION_CHARACTERISTICS;
 use super::types::PWSTR;
 use super::types::HANDLE;
 use super::constants::IMAGE_NUMBEROF_DIRECTORY_ENTRIES;
@@ -344,4 +345,115 @@ pub struct IMAGE_NT_HEADERS32 {
     pub Signature: u32,
     pub FileHeader: IMAGE_FILE_HEADER,
     pub OptionalHeader : IMAGE_OPTIONAL_HEADER32,
+}
+
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub struct IMAGE_SECTION_HEADER {
+    pub Name: [u8; 8],
+    pub Misc: IMAGE_SECTION_HEADER_0,
+    pub VirtualAddress: u32,
+    pub SizeOfRawData: u32,
+    pub PointerToRawData: u32,
+    pub PointerToRelocations: u32,
+    pub PointerToLinenumbers: u32,
+    pub NumberOfRelocations: u16,
+    pub NumberOfLinenumbers: u16,
+    pub Characteristics: IMAGE_SECTION_CHARACTERISTICS,
+}
+impl ::core::marker::Copy for IMAGE_SECTION_HEADER {}
+impl ::core::clone::Clone for IMAGE_SECTION_HEADER {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub union IMAGE_SECTION_HEADER_0 {
+    pub PhysicalAddress: u32,
+    pub VirtualSize: u32,
+}
+impl ::core::marker::Copy for IMAGE_SECTION_HEADER_0 {}
+impl ::core::clone::Clone for IMAGE_SECTION_HEADER_0 {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub struct IMAGE_BASE_RELOCATION {
+    pub VirtualAddress: u32,
+    pub SizeOfBlock: u32,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub struct IMAGE_IMPORT_DESCRIPTOR {
+    pub Anonymous: IMAGE_IMPORT_DESCRIPTOR_0,
+    pub TimeDateStamp: u32,
+    pub ForwarderChain: u32,
+    pub Name: u32,
+    pub FirstThunk: u32,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub union IMAGE_IMPORT_DESCRIPTOR_0 {
+    pub Characteristics: u32,
+    pub OriginalFirstThunk: u32,
+}
+
+
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+pub struct IMAGE_THUNK_DATA64 {
+    pub u1: IMAGE_THUNK_DATA64_0,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+pub union IMAGE_THUNK_DATA64_0 {
+    pub ForwarderString: usize,
+    pub Function: usize,
+    pub Ordinal: usize,
+    pub AddressOfData: usize,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub struct IMAGE_THUNK_DATA32 {
+    pub u1: IMAGE_THUNK_DATA32_0,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub union IMAGE_THUNK_DATA32_0 {
+    pub ForwarderString: usize,
+    pub Function: usize,
+    pub Ordinal: usize,
+    pub AddressOfData: usize,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub struct IMAGE_IMPORT_BY_NAME {
+    pub Hint: u16,	// not used.
+    pub Name: [u8; 255],
 }
