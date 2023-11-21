@@ -56,6 +56,28 @@ impl SyscallWrapper {
         }
     }
 
+    // NTSTATUS NtFreeVirtualMemory(
+    //     [in]      HANDLE  ProcessHandle,
+    //     [in, out] PVOID   *BaseAddress,
+    //     [in, out] PSIZE_T RegionSize,
+    //     [in]      ULONG   FreeType
+    //   );
+    #[allow(dead_code)]
+    pub fn nt_free_virtual_memory(&self, process_handle: HANDLE, base_address: &mut usize, region_size: &mut usize, free_type: u32) -> i32 {
+        let func_name = lc!("NtFreeVirtualMemory");
+        
+        unsafe {
+                syscall!(
+                self,
+                func_name,
+                process_handle,
+                base_address,
+                region_size,
+                free_type
+            )
+        }
+    }
+
     // NTSTATUS NtProtectVirtualMemory(
     //     IN HANDLE               ProcessHandle,
     //     IN OUT PVOID            *BaseAddress,

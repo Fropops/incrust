@@ -3,12 +3,14 @@ use std::mem::size_of;
 use std::ptr::null;
 
 use crate::common::helpers::ascii_bytes_to_string;
-use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, NULL, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS};
-use crate::winapi::dll_functions::{get_proc_address, get_proc_address_by_ordinal_index};
-use crate::winapi::kernel32::{LoadLibraryA, GetProcAddress, hook_exit_process};
+use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
+use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
+use crate::winapi::kernel32::hook_exit_process;
 use crate::winapi::structs::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_BY_NAME};
 use crate::winapi::types::{HANDLE, BASE_RELOCATION_ENTRY, IMAGE_THUNK_DATA};
+#[allow(unused_imports)]
 use crate::{debug_error, debug_info, debug_info_msg, debug_success_msg, debug_ok_msg, debug_info_hex, debug_error_msg};
+#[allow(unused_imports)]
 use crate::{debug_base, debug_base_msg, debug_base_hex};
 
 use super::constants::{IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT};
@@ -25,6 +27,7 @@ struct PE_Infos
 	pe_base_address: *const u8,
     pe_size: usize,
     pe_section_address: *const u8,
+    pe_section_size: usize,
 	nt_header_ptr: *const IMAGE_NT_HEADERS,
     is_dll: bool,
     image_section_header_ptr: *const IMAGE_SECTION_HEADER,
@@ -40,6 +43,7 @@ impl Default for PE_Infos {
         Self { pe_base_address: null(), 
             pe_section_address: null(),
             pe_size : 0, nt_header_ptr: null(), 
+            pe_section_size: 0,
             is_dll: false,
             image_section_header_ptr: null(),
             entry_import_data_dir_ptr: null(), 
@@ -114,12 +118,6 @@ impl PE_Loader {
             debug_info_msg!(format!("TLS : Size {} at {:#x}",(*self.infos.entry_TLS_data_dir_ptr).Size, (*self.infos.entry_TLS_data_dir_ptr).VirtualAddress as usize));
             debug_info_msg!(format!("Exc : Size {} at {:#x}",(*self.infos.entry_exception_data_dir_ptr).Size, (*self.infos.entry_exception_data_dir_ptr).VirtualAddress as usize));
             debug_info_msg!(format!("Export : Size {} at {:#x}",(*self.infos.entry_export_data_dir_ptr).Size, (*self.infos.entry_export_data_dir_ptr).VirtualAddress as usize));
-
-            // debug_info!(self.infos.entry_import_data_dir_ptr);
-            // debug_info!(self.infos.entry_base_reloc_data_dir_ptr);
-            // debug_info!(self.infos.entry_TLS_data_dir_ptr);
-            // debug_info!(self.infos.entry_exception_data_dir_ptr);
-            // debug_info!(self.infos.entry_export_data_dir_ptr);
         }
         debug_success_msg!(format!("Done."));
         true
@@ -140,8 +138,6 @@ impl PE_Loader {
         unsafe {
             let mut img_section_hdr_ptr = (self.infos.nt_header_ptr as usize + std::mem::size_of::<IMAGE_NT_HEADERS>()) as *const IMAGE_SECTION_HEADER;
             for _ in 0..(*self.infos.nt_header_ptr).FileHeader.NumberOfSections {
-                //debug_info_msg!(format!("Copying section {}...", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name)));
-
                 let src = (self.infos.pe_base_address as usize + (*img_section_hdr_ptr).PointerToRawData as usize) as *const u8;
                 let dst = (address + (*img_section_hdr_ptr).VirtualAddress as usize) as *mut u8;
                 let size = (*img_section_hdr_ptr).SizeOfRawData as usize;
@@ -154,6 +150,7 @@ impl PE_Loader {
         }
 
         self.infos.pe_section_address = address as *const u8;
+        self.infos.pe_section_size = size;
         debug_success_msg!(format!("Done."));
         true
     }
@@ -165,24 +162,9 @@ impl PE_Loader {
             let pe_offset = self.infos.pe_section_address as usize - (*self.infos.nt_header_ptr).OptionalHeader.ImageBase as usize;
             let mut base_relocation_entry: *const BASE_RELOCATION_ENTRY;
 
-            // debug_info_hex!(self.infos.pe_section_address as usize);
-            // debug_info_hex!((*self.infos.nt_header_ptr).OptionalHeader.ImageBase as usize);
-            // debug_info_hex!(self.infos.entry_base_reloc_data_dir_ptr as usize);
-            // debug_info_hex!((*self.infos.entry_base_reloc_data_dir_ptr).VirtualAddress as usize);
-            // debug_info_hex!((*self.infos.entry_base_reloc_data_dir_ptr).Size as usize);
-            // debug_info_hex!(image_base_relocation_ptr as usize);
-            // debug_info_hex!(pe_offset as usize);
-
-            // debug_info!((*image_base_relocation_ptr).VirtualAddress);
-            // debug_info!((*image_base_relocation_ptr).SizeOfBlock);
-            
             while (*image_base_relocation_ptr).VirtualAddress != 0 {
-                // debug_info!((*image_base_relocation_ptr).VirtualAddress);
-                // debug_info!((*image_base_relocation_ptr).SizeOfBlock);
-                // debug_info!(image_base_relocation_ptr);
 
                 base_relocation_entry = (image_base_relocation_ptr as usize  + size_of::<IMAGE_BASE_RELOCATION>()) as *const BASE_RELOCATION_ENTRY;
-                //debug_info!(base_relocation_entry);
 
                 let mut entry_count = 0;
                 while base_relocation_entry as usize != image_base_relocation_ptr as usize + (*image_base_relocation_ptr).SizeOfBlock as usize {
@@ -241,13 +223,6 @@ impl PE_Loader {
                 let dll_name_pcstr = PCSTR::from_raw(dll_name_address);
                 let dll_name = dll_name_pcstr.to_string().unwrap();
 
-                let dll_module = LoadLibraryA(dll_name_pcstr);
-                if dll_module == NULL as isize {
-                    crate::debug_error_msg!(format!("Failed to found address of dll {}!", dll_name));
-                    return false;
-                }
-                debug_info_msg!(format!("Importing {}...", dll_name));
-
                 let int_thunk_rva = (*img_desc_ptr).Anonymous.OriginalFirstThunk as usize;
 		        let iat_thunk_rva = (*img_desc_ptr).FirstThunk as usize;
                 let mut img_thunk_offset = 0usize;
@@ -269,14 +244,10 @@ impl PE_Loader {
 
                         //load by ordinal                    
                         let ordinal = ((*int_thunk_ptr).u1.Ordinal & 0xffff) as u16;
-                        let function_address_1 = get_proc_address_by_ordinal_index(dll_module, ordinal) as usize;
-                        let function_address = GetProcAddress(dll_module, (*int_thunk_ptr).u1.Ordinal & 0xffff as usize);
+                        let function_address = get_dll_proc_address_by_ordinal_index(&dll_name, ordinal) as usize;
                         if  function_address == 0  {
                             crate::debug_error_msg!(format!("Failed importing {}", ordinal));
                             return false;
-                        }
-                        if function_address_1 != function_address {
-                            debug_info_msg!(format!("Diff found {} at {:#x} instead of {:#x}", ordinal, function_address, function_address_1));
                         }
                         (*iat_thunk_ptr).u1.Function = function_address;
                         //debug_info_msg!(format!("loading function {}#{} at {:#x}", dll_name, ordinal, function_address));
@@ -284,26 +255,17 @@ impl PE_Loader {
                     else {
                         //load by name
                         let img_import_name_ptr = (self.infos.pe_section_address as usize + (*int_thunk_ptr).u1.AddressOfData as usize) as *const IMAGE_IMPORT_BY_NAME;
-                        let function_name_pcstr = PCSTR::from_raw((*img_import_name_ptr).Name.as_ptr());
                         let function_name = ascii_bytes_to_string(&(*img_import_name_ptr).Name);
-                        let function_address_1 = get_proc_address(dll_module, &function_name) as usize;
-                        let function_address = GetProcAddress(dll_module, function_name_pcstr.as_ptr() as usize);
-                        // if dll_name.to_lowercase() == "ole32.dll" && function_name == "CoInitializeEx" {
-                        //     let i = 0;
-                        //     debug_info_msg!(format!("loading function {} at {:#x}", function_name, function_address));
-                        // }
-
+                        let function_address = get_dll_proc_address(&dll_name, &function_name) as usize;
                         if  function_address == 0  {
                             crate::debug_error_msg!(format!("Failed importing {}", function_name));
                             return false;
                         }
                         //debug_info_msg!(format!("loading function {} at {:#x}", function_name, function_address));
-                        if function_address_1 != function_address {
-                            debug_info_msg!(format!("Diff found {} at {:#x} instead of {:#x}", function_name, function_address, function_address_1));
-                        }
                         (*iat_thunk_ptr).u1.Function = function_address;
 
 
+                        //Hook exit functions to prevent process to be closed
                         if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
                             let before = (*iat_thunk_ptr).u1.Function;
                             (*iat_thunk_ptr).u1.Function = hook_exit_process as usize;
@@ -358,7 +320,7 @@ impl PE_Loader {
                     protection = PAGE_EXECUTE_READWRITE;
                 }
 
-                debug_ok_msg!(format!("change memory protection of {} (size={}) form {:#x} to {}", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), (*img_section_hdr_ptr).SizeOfRawData, self.infos.pe_section_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize, protection));
+                debug_ok_msg!(format!("change memory protection of {} (size={}) at {:#x} to value {}", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), (*img_section_hdr_ptr).SizeOfRawData, self.infos.pe_section_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize, protection));
 
                 let res =  self.ntdll.nt_protect_virtual_memory(-1, &mut (self.infos.pe_section_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize), &mut ((*img_section_hdr_ptr).SizeOfRawData as usize), protection, &mut old_protection);
                 if res != STATUS_SUCCESS {
@@ -434,6 +396,14 @@ impl PE_Loader {
                 res = self.ntdll.nt_close(thread_handle);
                 if res != STATUS_SUCCESS {
                     debug_error_msg!("Failed to close Thread Handle!");
+                    return false;
+                }
+
+                let mut address = self.infos.pe_section_address as usize;
+                let mut size =  0;
+                let res = self.ntdll.nt_free_virtual_memory(-1, &mut address,  &mut size, MEM_RELEASE);
+                if res != STATUS_SUCCESS {
+                    crate::debug_error_msg!(format!("Failed to free memory : {:#x}!", res as usize));
                     return false;
                 }
         

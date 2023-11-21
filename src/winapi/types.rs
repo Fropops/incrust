@@ -29,6 +29,9 @@ pub type PROCESS_ACCESS_RIGHTS = u32;
 #[allow(non_camel_case_types)]
 pub type VIRTUAL_ALLOCATION_TYPE = u32;
 #[allow(non_camel_case_types)]
+#[allow(dead_code)]
+pub type VIRTUAL_FREE_TYPE = u32;
+#[allow(non_camel_case_types)]
 pub type PAGE_PROTECTION_FLAGS = u32;
 #[allow(non_camel_case_types)]
 pub type IMAGE_SCN_MEM_FLAGS = u32;
@@ -37,7 +40,9 @@ pub type THREAD_ACCESS_RIGHTS = u32;
 #[allow(non_camel_case_types)]
 pub type SYSTEM_INFORMATION_CLASS = i32;
 #[allow(non_camel_case_types)]
+#[allow(dead_code)]
 pub type IMAGE_FILE_CHARACTERISTICS = u16;
+#[allow(dead_code)]
 #[allow(non_camel_case_types)]
 pub type IMAGE_OPTIONAL_HEADER_MAGIC = u16;
 #[allow(non_camel_case_types)]

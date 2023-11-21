@@ -1,4 +1,6 @@
 use crate::*;
+use crate::winapi::kernel32::LoadLibraryA;
+use crate::winapi::types::PCSTR;
 
 use super::nt::syscall_functions::FunctionInfo;
 use super::structs::LDR_DATA_TABLE_ENTRY;
@@ -96,6 +98,32 @@ pub fn get_dll_base_address(module_name: &str) -> HINSTANCE {
     }
 }
 
+pub fn get_dll_proc_address_forwarded(dll_and_func_name: &str) -> usize {
+    let parts: Vec<&str> = dll_and_func_name.split(".").collect();
+    let dll_name = parts[0];
+    let dll_func = parts[1];
+
+    get_dll_proc_address(dll_name, dll_func)
+}
+
+#[allow(dead_code)]
+pub fn get_dll_proc_address(dll_name: &str, function_name: &str) -> usize {
+    unsafe {
+        let mut dll_name_str : String = String::from(dll_name);
+        dll_name_str.push('\0');
+
+        let dll_handle = LoadLibraryA(PCSTR::from_raw(dll_name_str.as_bytes().as_ptr()));
+        if dll_handle == 0 {
+            return 0;
+        }
+
+        let fn_adr = get_proc_address(dll_handle, function_name);
+        
+        return fn_adr;
+    }
+}
+
+
 #[allow(dead_code)]
 pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize {
     let dos_headers: *const IMAGE_DOS_HEADER;
@@ -141,13 +169,19 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
             
             let fun_ord = *(function_ordinals_array as *const u16);
             let address_ptr = function_address_array + fun_ord as usize * (std::mem::size_of::<u32>() as usize);
-            let fun_addr = module_handle as usize + *(address_ptr as *const u32) as usize;
-            //debug_info!(fun_name);
-            //debug_info!(fun_ord);
-            //debug_info!(fun_addr); 
-
+            let fun_rva = *(address_ptr as *const u32) as usize;
+  
             if fun_name.to_lowercase() == function_name.to_lowercase() {
-                return fun_addr;
+                //it's a forward
+                if fun_rva > (*data_directory).VirtualAddress as usize && fun_rva < (*data_directory).VirtualAddress as usize + (*data_directory).Size as usize {
+                    
+                    let forward_name_pcstr = PCSTR::from_raw((module_handle as usize + fun_rva) as *const u8);
+                    let forward_name = forward_name_pcstr.to_string().unwrap();
+                    let fn_adr = get_dll_proc_address_forwarded(forward_name.as_str());
+                    //debug_info_msg!(format!("forwarded from {} to {}, found at {:#x}", fun_name, forward_name, fn_adr));
+                    return fn_adr;
+                }
+                return module_handle as usize + *(address_ptr as *const u32) as usize;
             }
 
             function_name_array = function_name_array + std::mem::size_of::<u32>() as usize;
@@ -158,6 +192,20 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
 }
 
 
+pub fn get_dll_proc_address_by_ordinal_index(dll_name: &str, ordinal_index: u16) -> usize {
+    unsafe {
+        let mut dll_name_str : String = String::from(dll_name);
+        dll_name_str.push('\0');
+
+        let dll_handle = LoadLibraryA(PCSTR::from_raw(dll_name_str.as_bytes().as_ptr()));
+        if dll_handle == 0 {
+            return 0;
+        }
+        let fn_adr = get_proc_address_by_ordinal_index(dll_handle, ordinal_index);
+        
+        return fn_adr;
+    }
+}
 
 #[allow(dead_code)]
 pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index: u16) -> usize {
@@ -190,10 +238,19 @@ pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index
         
         for index in 1..(*export_directory).NumberOfFunctions as u16 { 
             if index == ordinal_index {
+
                 let address_ptr = function_address_array + (index - 1) as usize * (std::mem::size_of::<u32>() as usize);
+                let fun_rva = *(address_ptr as *const u32) as usize;
+
+                if fun_rva > (*data_directory).VirtualAddress as usize && fun_rva < (*data_directory).VirtualAddress as usize + (*data_directory).Size as usize {
+                    let forward_name_pcstr = PCSTR::from_raw((module_handle as usize + fun_rva) as *const u8);
+                    let forward_name = forward_name_pcstr.to_string().unwrap();
+                    let fn_adr = get_dll_proc_address_forwarded(forward_name.as_str());
+                    //debug_info_msg!(format!("forwarded from #{} to {}, found at {:#x}", ordinal_index, forward_name, fn_adr));
+                    return fn_adr;
+                }
                 //debug_info_hex!(*(address_ptr as *const u32) as usize);
-                let fun_addr = module_handle as usize + *(address_ptr as *const u32) as usize;
-                return fun_addr;
+                return module_handle as usize + *(address_ptr as *const u32) as usize;
             }
         }
         return 0;
