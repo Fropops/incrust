@@ -133,7 +133,9 @@ impl PE_Loader {
             crate::debug_error_msg!(format!("Failed to allocate memory (size = {})!", size));
             return false;
         }
-        //debug_success_msg!(format!("Memory allocated : {}b at {:#x}", size, address));
+
+        #[cfg(feature = "verbose")]
+        debug_success_msg!(format!("Memory allocated : {}b at {:#x}", size, address));
 
         unsafe {
             let mut img_section_hdr_ptr = (self.infos.nt_header_ptr as usize + std::mem::size_of::<IMAGE_NT_HEADERS>()) as *const IMAGE_SECTION_HEADER;
@@ -143,6 +145,8 @@ impl PE_Loader {
                 let size = (*img_section_hdr_ptr).SizeOfRawData as usize;
                 std::ptr::copy_nonoverlapping(src, dst, size);
 
+                //#[cfg(any(feature = "verbose", feature= "print_debug" ))]
+                #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("section {} copied (size={}) dst : {:#x} src : {:#x} ...", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), size, dst as usize, src as usize));
 
                 img_section_hdr_ptr = (img_section_hdr_ptr as usize + std::mem::size_of::<IMAGE_SECTION_HEADER>()) as *const IMAGE_SECTION_HEADER;
@@ -179,10 +183,13 @@ impl PE_Loader {
 
 
                             let address = (self.infos.pe_section_address as usize + (*image_base_relocation_ptr).VirtualAddress as usize + reloc_offset as usize) as *mut usize;
-                            //let before = *address;
+                            #[cfg(feature = "verbose")]
+                            let before = *address;
                             (*address) = (*address) + pe_offset;
-                            //let after = *address;
-                            //debug_info_msg!(format!("Address {:#x} fixed from {:#x} to {:#x} [offset = {:#x}, pe_offset = {:#x}]", (*address) as usize, before as usize, after as usize, reloc_offset as usize, pe_offset as usize));
+                            #[cfg(feature = "verbose")]
+                            let after = *address;
+                            #[cfg(feature = "verbose")]
+                            debug_info_msg!(format!("Address {:#x} fixed from {:#x} to {:#x} [offset = {:#x}, pe_offset = {:#x}]", (*address) as usize, before as usize, after as usize, reloc_offset as usize, pe_offset as usize));
                         },
                         IMAGE_REL_BASED_HIGHLOW => {
                             let address = (self.infos.pe_section_address as usize + (*image_base_relocation_ptr).VirtualAddress as usize + reloc_offset as usize) as *mut u32;
@@ -250,7 +257,8 @@ impl PE_Loader {
                             return false;
                         }
                         (*iat_thunk_ptr).u1.Function = function_address;
-                        //debug_info_msg!(format!("loading function {}#{} at {:#x}", dll_name, ordinal, function_address));
+                        #[cfg(feature = "verbose")]
+                        debug_info_msg!(format!("loading function {}#{} at {:#x}", dll_name, ordinal, function_address));
                     }
                     else {
                         //load by name
@@ -261,14 +269,17 @@ impl PE_Loader {
                             crate::debug_error_msg!(format!("Failed importing {}", function_name));
                             return false;
                         }
-                        //debug_info_msg!(format!("loading function {} at {:#x}", function_name, function_address));
+                        #[cfg(feature = "verbose")]
+                        debug_info_msg!(format!("loading function {} at {:#x}", function_name, function_address));
                         (*iat_thunk_ptr).u1.Function = function_address;
 
 
                         //Hook exit functions to prevent process to be closed
                         if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
+                            #[cfg(feature = "verbose")]
                             let before = (*iat_thunk_ptr).u1.Function;
                             (*iat_thunk_ptr).u1.Function = hook_exit_process as usize;
+                            #[cfg(feature = "verbose")]
                             debug_info_msg!(format!("Hooking {} at {:#x} instead of {:#x}", function_name, (*iat_thunk_ptr).u1.Function, before));
                         }
                     }
@@ -320,6 +331,7 @@ impl PE_Loader {
                     protection = PAGE_EXECUTE_READWRITE;
                 }
 
+                #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("change memory protection of {} (size={}) at {:#x} to value {}", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), (*img_section_hdr_ptr).SizeOfRawData, self.infos.pe_section_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize, protection));
 
                 let res =  self.ntdll.nt_protect_virtual_memory(-1, &mut (self.infos.pe_section_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize), &mut ((*img_section_hdr_ptr).SizeOfRawData as usize), protection, &mut old_protection);
