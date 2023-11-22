@@ -106,6 +106,18 @@ macro_rules! debug_base_msg {
 }
 
 #[macro_export]
+macro_rules! debug_simple_msg {
+    ($val:expr $(,)?) => {
+            if ::std::cfg!(debug_assertions) {
+                eprintln!("{}",
+                    $val,
+                );
+            }
+        };
+}
+
+
+#[macro_export]
 macro_rules! debug_success {
     ($val:expr $(,)?) => { debug_base!("*", $val) };
     ($msg:expr, $val:expr $(,)?) => { debug_base!("*", $msg, $val); };

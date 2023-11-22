@@ -113,10 +113,15 @@ impl PE_Loader {
             self.infos.entry_exception_data_dir_ptr = (&(*optional_header).DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION]) as *const IMAGE_DATA_DIRECTORY;
             self.infos.entry_export_data_dir_ptr = (&(*optional_header).DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]) as *const IMAGE_DATA_DIRECTORY;
 
+            #[cfg(feature = "verbose")]
             debug_info_msg!(format!("Import : Size {} at {:#x}",(*self.infos.entry_import_data_dir_ptr).Size, (*self.infos.entry_import_data_dir_ptr).VirtualAddress as usize));
+            #[cfg(feature = "verbose")]
             debug_info_msg!(format!("Reloc : Size {} at {:#x}",(*self.infos.entry_base_reloc_data_dir_ptr).Size, (*self.infos.entry_base_reloc_data_dir_ptr).VirtualAddress as usize));
+            #[cfg(feature = "verbose")]
             debug_info_msg!(format!("TLS : Size {} at {:#x}",(*self.infos.entry_TLS_data_dir_ptr).Size, (*self.infos.entry_TLS_data_dir_ptr).VirtualAddress as usize));
+            #[cfg(feature = "verbose")]
             debug_info_msg!(format!("Exc : Size {} at {:#x}",(*self.infos.entry_exception_data_dir_ptr).Size, (*self.infos.entry_exception_data_dir_ptr).VirtualAddress as usize));
+            #[cfg(feature = "verbose")]
             debug_info_msg!(format!("Export : Size {} at {:#x}",(*self.infos.entry_export_data_dir_ptr).Size, (*self.infos.entry_export_data_dir_ptr).VirtualAddress as usize));
         }
         debug_success_msg!(format!("Done."));
@@ -276,11 +281,9 @@ impl PE_Loader {
 
                         //Hook exit functions to prevent process to be closed
                         if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
-                            #[cfg(feature = "verbose")]
-                            let before = (*iat_thunk_ptr).u1.Function;
                             (*iat_thunk_ptr).u1.Function = hook_exit_process as usize;
                             #[cfg(feature = "verbose")]
-                            debug_info_msg!(format!("Hooking {} at {:#x} instead of {:#x}", function_name, (*iat_thunk_ptr).u1.Function, before));
+                            debug_info_msg!(format!("Patching {} at {:#x} instead of {:#x}", function_name, function_address, before));
                         }
                     }
 

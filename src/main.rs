@@ -15,5 +15,8 @@ mod common;
 mod winapi;
 
 fn main() {
+    debug_simple_msg!("====================================");
+    debug_simple_msg!("=====     PE Local Injector    =====");
+    debug_simple_msg!("====================================");
     loader::do_load();
 }
