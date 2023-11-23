@@ -62,6 +62,13 @@ pub struct RTL_USER_PROCESS_PARAMETERS {
     pub CommandLine: UNICODE_STRING,
 }
 
+impl ::core::marker::Copy for RTL_USER_PROCESS_PARAMETERS {}
+impl ::core::clone::Clone for RTL_USER_PROCESS_PARAMETERS {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 #[repr(C)]
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]
@@ -86,6 +93,8 @@ impl UNICODE_STRING {
         Ok(String::from_utf16_lossy(buffer))
     }
 }
+
+
 
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]

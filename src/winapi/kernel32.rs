@@ -127,11 +127,11 @@ extern "system" {
    pub fn LoadLibraryA(lp_lib_file_name: PCSTR) -> HINSTANCE;
 }
 
-#[allow(unused)]
-#[link(name = "kernel32")]
-extern "system" {
-   pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: usize) -> usize;
-}
+// #[allow(unused)]
+// #[link(name = "kernel32")]
+// extern "system" {
+//    pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: usize) -> usize;
+// }
 
 #[allow(unused)]
 #[link(name = "kernel32")]
@@ -145,3 +145,41 @@ pub fn hook_exit_process(exit_code: u32) {
         ExitThread(exit_code);
     }
 }
+
+
+
+// int hook_wgetmainargs(int* _Argc, wchar_t*** _Argv, wchar_t*** _Env, int _useless_, void* _useless)
+// {
+// 	//BeaconPrintf(CALLBACK_OUTPUT, "called __wgetmainargs");
+// 	*_Argc = int_masqCmd_Argc;
+// 	*_Argv = poi_masqArgvW;
+
+// 	return 0;
+// }
+
+#[allow(unused)]
+pub fn hook_wgetmainargs(_Argc: usize, _Argv: usize, _Env: usize, _useless_ : u32, _useless: usize) -> u32 {
+    unsafe {
+        use crate::debug_base_msg;
+        crate::debug_ok_msg!("In hook_wgetmainargs");
+
+        0
+    }
+}
+
+
+// LPWSTR * CommandLineToArgvW(
+//     [in]  LPCWSTR lpCmdLine,
+//     [out] int     *pNumArgs
+//   );
+//  pub static mut real_CommandLineToArgvW : usize = 0;
+
+// pub fn hook_CommandLineToArgvW(lpCmdLine: PWSTR, pNumArgs: *mut u32) -> usize {
+//     unsafe {
+//         use crate::debug_base_msg;
+//         crate::debug_info_msg!(format!("Hooked !! args = {}", lpCmdLine.to_string().unwrap()));
+
+//         let func: extern "C" fn(lpCmdLine: PWSTR, pNumArgs: *mut u32) -> usize = core::mem::transmute(real_CommandLineToArgvW);
+//         return func(lpCmdLine, pNumArgs);
+//     }
+// }
