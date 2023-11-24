@@ -133,18 +133,18 @@ extern "system" {
 //    pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: usize) -> usize;
 // }
 
-#[allow(unused)]
-#[link(name = "kernel32")]
-extern "system" {
-    pub fn ExitThread(dwExitCode: u32);
-}
+// #[allow(unused)]
+// #[link(name = "kernel32")]
+// extern "system" {
+//     pub fn ExitThread(dwExitCode: u32);
+// }
 
-#[allow(unused)]
-pub fn hook_exit_process(exit_code: u32) {
-    unsafe {
-        ExitThread(exit_code);
-    }
-}
+// #[allow(unused)]
+// pub fn hook_exit_process(exit_code: u32) {
+//     unsafe {
+//         ExitThread(exit_code);
+//     }
+// }
 
 
 
@@ -157,15 +157,15 @@ pub fn hook_exit_process(exit_code: u32) {
 // 	return 0;
 // }
 
-#[allow(unused)]
-pub fn hook_wgetmainargs(_Argc: usize, _Argv: usize, _Env: usize, _useless_ : u32, _useless: usize) -> u32 {
-    unsafe {
-        use crate::debug_base_msg;
-        crate::debug_ok_msg!("In hook_wgetmainargs");
+// #[allow(unused)]
+// pub fn hook_wgetmainargs(_Argc: usize, _Argv: usize, _Env: usize, _useless_ : u32, _useless: usize) -> u32 {
+//     unsafe {
+//         use crate::debug_base_msg;
+//         crate::debug_ok_msg!("In hook_wgetmainargs");
 
-        0
-    }
-}
+//         0
+//     }
+// }
 
 
 // LPWSTR * CommandLineToArgvW(

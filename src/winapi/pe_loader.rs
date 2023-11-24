@@ -5,7 +5,7 @@ use std::ptr::null;
 use crate::common::helpers::ascii_bytes_to_string;
 use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
-use crate::winapi::kernel32::{hook_exit_process, hook_wgetmainargs};
+use crate::winapi::ntdll::RtlExitUserThread;
 use crate::winapi::structs::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_BY_NAME, RTL_USER_PROCESS_PARAMETERS, UNICODE_STRING};
 use crate::winapi::types::{HANDLE, BASE_RELOCATION_ENTRY, IMAGE_THUNK_DATA, PWSTR};
 #[allow(unused_imports)]
@@ -72,23 +72,37 @@ impl Default for PE_Args {
     }
 }
 
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub struct PE_Options{
+    pub patch_exit_functions: bool
+}
+
+impl Default for PE_Options {
+    fn default() -> Self {
+        Self { patch_exit_functions: true }
+    }
+}
+
+
 
 #[allow(non_camel_case_types)]
 pub struct PE_Loader {
     infos: PE_Infos,
     pe_bytes: Vec<u8>,
     arguments: PE_Args,
+    options: PE_Options,
     ntdll: SyscallWrapper,
 }
 
-
-
 impl PE_Loader {
-    pub fn new(ntdll: SyscallWrapper) -> Self {
+    pub fn new(ntdll: SyscallWrapper, options: PE_Options) -> Self {
         Self{
             infos: PE_Infos::default(),
             ntdll: ntdll,
             arguments: PE_Args::default(),
+            options: options,
             pe_bytes: vec![0]
         }
     }
@@ -303,41 +317,37 @@ impl PE_Loader {
 
 
                         //Hook exit functions to prevent process to be closed
-                        if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
-                            (*iat_thunk_ptr).u1.Function = hook_exit_process as usize;
-                            #[cfg(feature = "verbose")]
-                            debug_info_msg!(format!("Patching {} at {:#x} instead of {:#x}", function_name, function_address, before));
+                        if self.options.patch_exit_functions {
+                            if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
+                                (*iat_thunk_ptr).u1.Function = RtlExitUserThread as usize;
+                                #[cfg(feature = "verbose")]
+                                debug_info_msg!(format!("Patching {} at {:#x} instead of {:#x}", function_name, function_address, before));
+                            }
                         }
 
-                        if function_name == "GetCommandLineA" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                            (*iat_thunk_ptr).u1.Function = hook_wgetmainargs as usize;
-                        }
-                        else if function_name == "GetCommandLineW" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                        }
-                        else if function_name == "__getmainargs" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                        }
-                        else if function_name == "__wgetmainargs" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                        }
-                        else if function_name == "__p___argv" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                        }
-                        else if function_name == "__p___wargv" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                        }
-                        else if function_name == "hook__p___argc" {
-                            debug_info_msg!(format!("Found arg function {}", function_name));
-                        } 
-                        // else if function_name == "CommandLineToArgvW" {
+                        //Hook command args functions
+                        // if function_name == "GetCommandLineA" {
                         //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        //     (*iat_thunk_ptr).u1.Function = hook_CommandLineToArgvW as usize;
-                        //     crate::winapi::kernel32::real_CommandLineToArgvW = function_address;
+                        //     (*iat_thunk_ptr).u1.Function = hook_wgetmainargs as usize;
                         // }
-
-                        
+                        // else if function_name == "GetCommandLineW" {
+                        //     debug_info_msg!(format!("Found arg function {}", function_name));
+                        // }
+                        // else if function_name == "__getmainargs" {
+                        //     debug_info_msg!(format!("Found arg function {}", function_name));
+                        // }
+                        // else if function_name == "__wgetmainargs" {
+                        //     debug_info_msg!(format!("Found arg function {}", function_name));
+                        // }
+                        // else if function_name == "__p___argv" {
+                        //     debug_info_msg!(format!("Found arg function {}", function_name));
+                        // }
+                        // else if function_name == "__p___wargv" {
+                        //     debug_info_msg!(format!("Found arg function {}", function_name));
+                        // }
+                        // else if function_name == "hook__p___argc" {
+                        //     debug_info_msg!(format!("Found arg function {}", function_name));
+                        // } 
                         
                     }
 

