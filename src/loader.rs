@@ -31,12 +31,10 @@ pub fn do_load()
     let result: Result<(), Box<dyn Any + Send>> = panic::catch_unwind(|| {
         let pe_bytes = get_pe();
         debug_success_msg!(format!("PE loaded, size = {}", pe_bytes.len()));
-        let args = String::from(env!("PAYLOAD_ARGUMENTS"));
-        debug_success_msg!(format!("args = {}", args));
         let options = PE_Options {
             patch_exit_functions: true
         };
-        load(pe_bytes, args, options);
+        load(pe_bytes, options);
     });
     match result {
         Err(_) => debug_error_msg!(format!("An Error occured")),
@@ -56,22 +54,31 @@ fn get_pe() -> Vec<u8> {
     pe_bytes.to_vec()
 }
  
-fn load(pe_bytes: Vec<u8>, args: String, options: PE_Options) {
+fn load(pe_bytes: Vec<u8>, options: PE_Options) {
     
 
     let ntdll = SyscallWrapper::new();
     debug_info_msg!("Loading ...");
 
     let mut pe_loader = PE_Loader::new(ntdll, options);
-    if !pe_loader.inject(pe_bytes, args) {
+    if !pe_loader.inject(pe_bytes) {
         debug_error_msg!("Failed to inject PE.");
         return;
     }
 
-    if !pe_loader.execute() {
+    let args = String::from(env!("PAYLOAD_ARGUMENTS"));
+    debug_success_msg!(format!("args = {}", args));
+
+    if !pe_loader.execute(args) {
         debug_error_msg!("Failed to execute PE.");
         return;
     }
+
+
+    // if !pe_loader.execute(String::from("test exit")) {
+    //     debug_error_msg!("Failed to execute PE.");
+    //     return;
+    // }
 
     if !pe_loader.clean() {
         debug_error_msg!("Failed to clean PE.");

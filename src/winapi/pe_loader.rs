@@ -1,10 +1,11 @@
 
 use std::mem::size_of;
-use std::ptr::null;
+use std::ptr::{null, null_mut};
 
 use crate::common::helpers::ascii_bytes_to_string;
 use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
+use crate::winapi::kernel32::FlushInstructionCache;
 use crate::winapi::ntdll::RtlExitUserThread;
 use crate::winapi::structs::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_BY_NAME, RTL_USER_PROCESS_PARAMETERS, UNICODE_STRING};
 use crate::winapi::types::{HANDLE, BASE_RELOCATION_ENTRY, IMAGE_THUNK_DATA, PWSTR};
@@ -107,13 +108,11 @@ impl PE_Loader {
         }
     }
 
-    fn init(&mut self, pe_bytes: Vec<u8>, args: String) -> bool {
+    fn init(&mut self, pe_bytes: Vec<u8>) -> bool {
         debug_info_msg!(format!("Reading PE Infos ..."));
         let dos_headers: *const IMAGE_DOS_HEADER;
         let nt_headers: *const IMAGE_NT_HEADERS;
         let optional_header: * const IMAGE_OPTIONAL_HEADER;
-
-        self.arguments.new_args = args;
         
         let pe_base_address = pe_bytes.as_ptr();
         self.pe_bytes = pe_bytes;
@@ -488,12 +487,12 @@ impl PE_Loader {
     //     true
     // }
 
-    fn patch_arguments(&mut self) -> bool {
+    fn patch_arguments(&mut self, args: String) -> bool {
         let (existing_args_length, existing_args_max_length, existing_args) = self.read_args();
 
         let mut full_cmd = String::new();
         full_cmd.push_str(" "); //should start with a space because the firs param should be the exe name. if we put just a space, exe name is empty
-        full_cmd.push_str(&self.arguments.new_args.trim());
+        full_cmd.push_str(&args.trim());
         let full_cmd_length = (full_cmd.len() * 2 + 2) as u16;
 
         if full_cmd_length > existing_args_max_length {
@@ -501,21 +500,18 @@ impl PE_Loader {
                 return false;
         }
 
-        //saving existing args
+        //saving existing args and new arg
+        self.arguments.new_args = args;
         self.arguments.existing_args = existing_args;
         self.arguments.existing_arg_length = existing_args_length;
         self.arguments.existing_arg_max_length = existing_args_max_length;
 
 
-        self.write_args(full_cmd_length, full_cmd_length, full_cmd);
+        self.overwrite_peb_args(full_cmd_length, full_cmd_length, full_cmd);
         true
     }
 
-    fn restore_arguments(&self) {
-        self.write_args(self.arguments.existing_arg_length, self.arguments.existing_arg_max_length, self.arguments.existing_args.clone())
-    }
-
-    fn write_args(&self, length: u16, max_length: u16, args: String) {
+    fn overwrite_peb_args(&self, length: u16, max_length: u16, args: String) {
         unsafe {
             let peb = get_peb();
             let rtl_param = *(peb.ProcessParameters as *const RTL_USER_PROCESS_PARAMETERS);
@@ -544,8 +540,8 @@ impl PE_Loader {
         }
     }
 
-    pub fn inject(&mut self, pe_bytes: Vec<u8>, args: String) -> bool {
-        if !self.init(pe_bytes, args) {
+    pub fn inject(&mut self, pe_bytes: Vec<u8>) -> bool {
+        if !self.init(pe_bytes) {
             return false;
         }
 
@@ -564,19 +560,22 @@ impl PE_Loader {
         if !self.adapt_permissions() {
             return false;
         }
-
-        if !self.patch_arguments() {
-            return false;
-        }
-
         true
     }
 
-    pub fn execute(&mut self) -> bool {
-        debug_info_msg!(format!("Executing ..."));
+    pub fn execute(&mut self, args: String) -> bool {
+        debug_info_msg!(format!("Executing with args {} ...", args));
+
+        if !self.patch_arguments(args) {
+            return false;
+        }
+
+        unsafe {
+            FlushInstructionCache(-1 as HANDLE, null_mut(), 0);
+        }
+
         if self.infos.is_dll {
-            // We must flush the instruction cache to avoid stale code being used which was updated by our relocation processing.
-            //FlushInstructionCache(-1 as _, null_mut(), 0);
+            
         
             // call our respective entry point, fudging our hInstance value
             // #[allow(non_camel_case_types)]
@@ -636,7 +635,7 @@ impl PE_Loader {
 
         #[cfg(feature = "verbose")]
         debug_info_msg!(format!("restoring args"));
-        self.restore_arguments();
+        self.overwrite_peb_args(self.arguments.existing_arg_length, self.arguments.existing_arg_max_length, self.arguments.existing_args.clone());
 
         debug_success_msg!(format!("Done."));
         true

@@ -126,6 +126,17 @@ pub type GetLastError = unsafe extern "system" fn () -> u32;
 extern "system" {
    pub fn LoadLibraryA(lp_lib_file_name: PCSTR) -> HINSTANCE;
 }
+// BOOL FlushInstructionCache(
+//     [in] HANDLE  hProcess,
+//     [in] LPCVOID lpBaseAddress,
+//     [in] SIZE_T  dwSize
+//   );
+#[allow(unused)]
+#[link(name = "kernel32")]
+extern "system" {
+   pub fn FlushInstructionCache(hProcess: HANDLE, lpBaseAddress: *mut u8, dwSize: usize) -> BOOL;
+}
+
 
 // #[allow(unused)]
 // #[link(name = "kernel32")]
