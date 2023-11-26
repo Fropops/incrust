@@ -137,12 +137,19 @@ extern "system" {
    pub fn FlushInstructionCache(hProcess: HANDLE, lpBaseAddress: *mut u8, dwSize: usize) -> BOOL;
 }
 
+#[allow(unused)]
+#[link(name = "kernel32")]
+extern "system" {
+    pub fn GetCommandLineW() -> PWSTR;
+}
 
-// #[allow(unused)]
-// #[link(name = "kernel32")]
-// extern "system" {
-//    pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: usize) -> usize;
-// }
+
+
+#[allow(unused)]
+#[link(name = "kernel32")]
+extern "system" {
+   pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: PCSTR) -> usize;
+}
 
 // #[allow(unused)]
 // #[link(name = "kernel32")]

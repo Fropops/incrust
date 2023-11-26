@@ -69,16 +69,18 @@ fn load(pe_bytes: Vec<u8>, options: PE_Options) {
     let args = String::from(env!("PAYLOAD_ARGUMENTS"));
     debug_success_msg!(format!("args = {}", args));
 
+    if !pe_loader.execute(String::from("coffee exit")) {
+        debug_error_msg!("Failed to execute PE.");
+        return;
+    }
+
     if !pe_loader.execute(args) {
         debug_error_msg!("Failed to execute PE.");
         return;
     }
 
 
-    // if !pe_loader.execute(String::from("test exit")) {
-    //     debug_error_msg!("Failed to execute PE.");
-    //     return;
-    // }
+    
 
     if !pe_loader.clean() {
         debug_error_msg!("Failed to clean PE.");
