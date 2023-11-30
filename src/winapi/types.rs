@@ -51,6 +51,8 @@ pub type IMAGE_SECTION_CHARACTERISTICS = u32;
 pub type BASE_RELOCATION_ENTRY = u16;
 #[allow(non_camel_case_types)]
 pub type BASE_RELOCATION_TYPE = u16;
+#[allow(non_camel_case_types)]
+pub type STD_HANDLE = u32;
 
 #[allow(dead_code)]
 extern "C" {

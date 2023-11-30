@@ -120,27 +120,27 @@ macro_rules! debug_simple_msg {
 #[macro_export]
 macro_rules! debug_success {
     ($val:expr $(,)?) => { debug_base!("*", $val) };
-    ($msg:expr, $val:expr $(,)?) => { debug_base!("*", $msg, $val); };
+    ($msg:expr, $val:expr $(,)?) => { debug_base!("*", $msg, $val) };
 }
 #[macro_export]
 macro_rules! debug_success_msg {
-    ($val:expr $(,)?) => { debug_base_msg!("*", $val); };
+    ($val:expr $(,)?) => { debug_base_msg!("*", $val) };
 }
 
 #[macro_export]
 macro_rules! debug_ok {
     ($val:expr $(,)?) => { debug_base!("+", $val) };
-    ($msg:expr, $val:expr $(,)?) => { debug_base!("+", $msg, $val); };
+    ($msg:expr, $val:expr $(,)?) => { debug_base!("+", $msg, $val) };
 }
 #[macro_export]
 macro_rules! debug_ok_msg {
-    ($val:expr $(,)?) => { debug_base_msg!("+", $val); };
+    ($val:expr $(,)?) => { debug_base_msg!("+", $val) };
 }
 
 #[macro_export]
 macro_rules! debug_error {
     ($val:expr $(,)?) => { debug_base!("X", $val) };
-    ($msg:expr, $val:expr $(,)?) => { debug_base!("X", $msg, $val); };
+    ($msg:expr, $val:expr $(,)?) => { debug_base!("X", $msg, $val) };
 }
 #[macro_export]
 macro_rules! debug_error_msg {
@@ -150,7 +150,7 @@ macro_rules! debug_error_msg {
 #[macro_export]
 macro_rules! debug_info {
     ($val:expr $(,)?) => { debug_base!("?", $val) };
-    ($msg:expr, $val:expr $(,)?) => { debug_base!("?", $msg, $val); };
+    ($msg:expr, $val:expr $(,)?) => { debug_base!("?", $msg, $val) };
 }
 #[macro_export]
 macro_rules! debug_info_msg {

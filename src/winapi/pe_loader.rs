@@ -1,7 +1,7 @@
-
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 
+use crate::common::console::{redirect_outputs, revert_outputs, read_outputs};
 use crate::common::helpers::ascii_bytes_to_string;
 use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
@@ -391,7 +391,12 @@ impl PE_Loader {
                 debug_error_msg!("Failed to create new arguments Unicode_string!");
                 return false;
             }
+            debug_info_msg!(format!("__warg = {:#x}", new_args_us_pointer as usize));
+            debug_info_msg!(format!("__warg buffer = {:#x}", (*new_args_us_pointer).Buffer.as_ptr() as usize));
         }
+
+        
+
 
         //hijack command line
         let mut pointers_count = 0;
@@ -414,10 +419,9 @@ impl PE_Loader {
                     img_section_hdr_ptr = (img_section_hdr_ptr as usize + std::mem::size_of::<IMAGE_SECTION_HEADER>()) as *const IMAGE_SECTION_HEADER;
                 }
 
-            let get_command_line_w_pwstr = GetCommandLineW();
             
-        
             //patch GetCommandLineW
+            let get_command_line_w_pwstr = GetCommandLineW();
             for _ in 0..pointers_count {
                 let current_pointer = data_section_ptr as *mut UNICODE_STRING;
                 data_section_ptr = data_section_ptr + size_of::<usize>();
@@ -425,23 +429,26 @@ impl PE_Loader {
                 if (*current_pointer).Buffer.as_ptr() as usize != get_command_line_w_pwstr.as_ptr() as usize {
                     continue;
                 }
+                #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("patching GetCommandLineW at {:#x} (Buffer = {:#x})", current_pointer as usize, (*current_pointer).Buffer.as_ptr() as usize));
                 *current_pointer = *new_args_us_pointer;
                 #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("New value for GetCommandLineW = {}", GetCommandLineW().to_string().unwrap()));
+                #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("patced GetCommandLineW at {:#x} (Buffer = {:#x})", current_pointer as usize, (*current_pointer).Buffer.as_ptr() as usize));
                 break;
             }
 
-            //should patch GetCommandLineA
+            
 
-            //_acmdln;__argv;__p__acmdln;__p___argv;_wcmdln;__wargv;__p__wcmdln;__p___wargv
+            //_wcmdln;__wargv;__p__wcmdln;__p___wargv
             type WCHAR = u16;
             type PWCHAR = *mut WCHAR;
             type PPWCHAR = *mut PWCHAR;
 
             let mut address = get_dll_proc_address("ucrtbase.dll", "__p__wcmdln");
             if address != 0 {
+                #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("Patching {}!{} at {:#x}", "ucrtbase.dll", "__p__wcmdln", address));
                 let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(address);
                 let wargv = p_wcmdln() as PPWCHAR;
@@ -450,51 +457,30 @@ impl PE_Loader {
 
             address = get_dll_proc_address("msvcrt.dll", "_wcmdln");
             if address != 0 {
+                #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("Patching {}!{} at {:#x}", "msvcrt.dll", "_wcmdln", address));
                 let wargv = address as PPWCHAR;
                 *wargv = (*new_args_us_pointer).Buffer.as_ptr();
             }
 
-            // unsafe {
-            //     let peb = get_peb();
-            //     let mut p_ldr_data_table_entry: *const LDR_DATA_TABLE_ENTRY = (*peb.Ldr).InMemoryOrderModuleList.Flink as *const LDR_DATA_TABLE_ENTRY;
-            //     let mut p_list_entry = &(*peb.Ldr).InMemoryOrderModuleList as *const LIST_ENTRY;
+            address = get_dll_proc_address("msvcrt.dll", "__wargv");
+            if address != 0 {
+                #[cfg(feature = "verbose")]
+                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "msvcrt.dll", "__wargv", address));
+                let wargv = address as PPWCHAR;
+                *wargv = null_mut();
+            }
 
-            //     loop {
-            //         let mut dll_name = (*p_ldr_data_table_entry).FullDllName.to_string().unwrap();
-                    
-            //         //last element of the list => shoudl stop the loop
-            //         if p_list_entry == (*peb.Ldr).InMemoryOrderModuleList.Blink {
-            //             break
-            //         }
+            address = get_dll_proc_address("ucrtbase.dll", "__p___wargv");
+            if address != 0 {
+                #[cfg(feature = "verbose")]
+                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "ucrtbase.dll", "__p___wargv", address));
+                let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(address);
+                let wargv = p_wcmdln() as PPWCHAR;
+                *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+            }
 
-            //         let dll_handle = get_dll_base_address(&dll_name);
-                    
-                    
-            //         //_wcmdln
-            //         // debug_ok_msg!(format!("Loking into dll : {} at {:#x}", dll_name, dll_handle as usize));
-            //         // let mut address = GetProcAddress(dll_handle, PCSTR::from_raw("_wcmdln".to_ascii_lowercase().as_ptr()));
-            //         // if address != 0 {
-            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "_wcmdln", address));
-            //         // }
-            //         // address = GetProcAddress(dll_handle, PCSTR::from_raw("__wargv".to_ascii_lowercase().as_ptr()));
-            //         // if address != 0 {
-            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "__wargv", address));
-            //         // }
-            //         // address = GetProcAddress(dll_handle, PCSTR::from_raw("__p__wcmdln".to_ascii_lowercase().as_ptr()));
-            //         // if address != 0 {
-            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "__p__wcmdln", address));
-            //         // }
-            //         // address = GetProcAddress(dll_handle, PCSTR::from_raw("__p___wargv".to_ascii_lowercase().as_ptr()));
-            //         // if address != 0 {
-            //         //     debug_ok_msg!(format!("Found {}.{} at {:#x}", dll_name, "__p___wargv", address));
-            //         // }
-
-            //         //go to next element of the list
-            //         p_list_entry = (*p_list_entry).Flink;
-            //         p_ldr_data_table_entry = (*p_list_entry).Flink as *const LDR_DATA_TABLE_ENTRY;
-            //     }
-            // }
+            //TODO patch GetCommandLineA & handle _acmdln;__argv;__p__acmdln;__p___argv
         }
 
         true
@@ -514,7 +500,7 @@ impl PE_Loader {
     //     }
     // }
 
-    pub fn inject(&mut self, pe_bytes: Vec<u8>) -> bool {
+    fn inject(&mut self, pe_bytes: Vec<u8>) -> bool {
         if !self.init(pe_bytes) {
             return false;
         }
@@ -537,12 +523,14 @@ impl PE_Loader {
         true
     }
 
-    pub fn execute(&mut self, args: String) -> bool {
+    fn execute(&mut self, args: String) -> Option<String> {
         debug_info_msg!(format!("Executing with args {} ...", args));
 
         if !self.patch_arguments(args) {
-            return false;
+            return None;
         }
+
+        let mut output = String::new();
 
         unsafe {
             FlushInstructionCache(-1 as HANDLE, null_mut(), 0);
@@ -566,27 +554,39 @@ impl PE_Loader {
             unsafe {
                 let entry_point = self.infos.pe_base_address as usize + (*self.infos.nt_header_ptr).OptionalHeader.AddressOfEntryPoint as usize;
 
+                redirect_outputs();
+
+
                 let mut thread_handle: HANDLE = 0;
                 let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, entry_point);
                 if res != STATUS_SUCCESS {
                     debug_error_msg!("Failed to start thread!");
-                    return false;
+                    return None;
                 }
-                debug_success_msg!("Thread executed");
+                //debug_success_msg!("Thread executed");
             
+
+                
+
                 self.infos.thread_handle = thread_handle;
                 res =  self.ntdll.nt_wait_for_single_object(thread_handle);
                 if res != STATUS_SUCCESS {
                     debug_error_msg!("Failed to wait!");
-                    return false;
+                    return None;
                 }
+                
+                while let Some(buff) = read_outputs() {
+                    output.push_str(String::from_utf8(buff).unwrap().as_str());
+                }
+
+                revert_outputs();
             }
         }
         debug_success_msg!(format!("Done."));
-        true
+        Some(output)
     }
 
-    pub fn clean(&self) -> bool {
+    fn clean(&self) -> bool {
         debug_info_msg!(format!("Cleaning ..."));
 
         #[cfg(feature = "verbose")]
@@ -611,4 +611,27 @@ impl PE_Loader {
         true
     }
 
+    pub fn execute_exe(&mut self, pe_bytes:Vec<u8>, args: String) -> Option<String> {
+        if !self.inject(pe_bytes) {
+            debug_error_msg!("Failed to inject PE.");
+            return None;
+        }
+
+        let output: String;
+        match self.execute(args) {
+            
+            None => {
+                debug_error_msg!("Failed to execute PE."); 
+                return None;
+            },
+            Some(outp) => output = outp
+        }
+
+        if !self.clean() {
+            debug_error_msg!("Failed to clean PE.");
+            return None;
+        }
+
+        Some(output)
+    }
 }

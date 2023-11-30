@@ -11,7 +11,7 @@ litcrypt = "0.3.0"
 rand = "0.8.5"
 
 [features]
-default = ["payload_bin", "syscall_indirect", "print_debug"]
+default = ["payload_bin", "syscall_indirect", "print_debug", "no_console"]
 no_console = []
 verbose = []
 print_debug = []
