@@ -1,7 +1,7 @@
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 
-use crate::common::console::{redirect_outputs, revert_outputs, read_outputs};
+use crate::common::output::{OutputRedirector, RedirectionType};
 use crate::common::helpers::ascii_bytes_to_string;
 use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
@@ -62,12 +62,13 @@ impl Default for PE_Infos {
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]
 pub struct PE_Options{
-    pub patch_exit_functions: bool
+    pub patch_exit_functions: bool,
+    pub collect_output: bool,
 }
 
 impl Default for PE_Options {
     fn default() -> Self {
-        Self { patch_exit_functions: true }
+        Self { patch_exit_functions: true, collect_output: true }
     }
 }
 
@@ -79,15 +80,17 @@ pub struct PE_Loader {
     pe_bytes: Vec<u8>,
     options: PE_Options,
     ntdll: SyscallWrapper,
+    redirector: OutputRedirector,
 }
 
 impl PE_Loader {
-    pub fn new(ntdll: SyscallWrapper, options: PE_Options) -> Self {
+    pub fn new(ntdll: SyscallWrapper, redirector: OutputRedirector, options: PE_Options) -> Self {
         Self{
             infos: PE_Infos::default(),
             ntdll: ntdll,
             options: options,
-            pe_bytes: vec![0]
+            pe_bytes: vec![0],
+            redirector: redirector
         }
     }
 
@@ -486,20 +489,6 @@ impl PE_Loader {
         true
     }
 
-    // fn read_peb_args(&self) -> (u16, u16, String) {
-    //     unsafe {
-    //         let peb = get_peb();
-    //         let rtl_param = *(peb.ProcessParameters as *const RTL_USER_PROCESS_PARAMETERS);
-    //         let cmd_line_ptr = &rtl_param.CommandLine as *const UNICODE_STRING;
-    //         let cmd_line_length_ptr = (cmd_line_ptr as usize) as *mut u16;
-    //         let cmd_line_max_length_ptr = ((cmd_line_ptr as usize) + 2) as *mut u16;
-
-    //         debug_ok_msg!(format!("Currrent PEB args : buffer at {:#x}, maxl = {}, length = {}, value = {}", (*cmd_line_ptr).Buffer.as_ptr() as usize, (*cmd_line_ptr).MaximumLength, (*cmd_line_ptr).Length, (*cmd_line_ptr).Buffer.to_string().unwrap()));
-
-    //         (*(cmd_line_length_ptr),*(cmd_line_max_length_ptr),(*cmd_line_ptr).to_string().unwrap())
-    //     }
-    // }
-
     fn inject(&mut self, pe_bytes: Vec<u8>) -> bool {
         if !self.init(pe_bytes) {
             return false;
@@ -523,11 +512,11 @@ impl PE_Loader {
         true
     }
 
-    fn execute(&mut self, args: String) -> Option<String> {
+    fn execute(&mut self, args: String) -> (bool, Option<String>) {
         debug_info_msg!(format!("Executing with args {} ...", args));
 
         if !self.patch_arguments(args) {
-            return None;
+            return (false,None);
         }
 
         let mut output = String::new();
@@ -554,36 +543,41 @@ impl PE_Loader {
             unsafe {
                 let entry_point = self.infos.pe_base_address as usize + (*self.infos.nt_header_ptr).OptionalHeader.AddressOfEntryPoint as usize;
 
-                redirect_outputs();
+                if self.options.collect_output {
+                    self.redirector.redirect_outputs(RedirectionType::Msvcrt);
+                }
 
 
                 let mut thread_handle: HANDLE = 0;
                 let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, entry_point);
                 if res != STATUS_SUCCESS {
                     debug_error_msg!("Failed to start thread!");
-                    return None;
+                    return (false, None);
                 }
-                //debug_success_msg!("Thread executed");
-            
-
-                
 
                 self.infos.thread_handle = thread_handle;
                 res =  self.ntdll.nt_wait_for_single_object(thread_handle);
                 if res != STATUS_SUCCESS {
                     debug_error_msg!("Failed to wait!");
-                    return None;
-                }
-                
-                while let Some(buff) = read_outputs() {
-                    output.push_str(String::from_utf8(buff).unwrap().as_str());
+                    return (false,None);
                 }
 
-                revert_outputs();
+                if self.options.collect_output {
+                    while let Some(buff) = self.redirector.read_outputs() {
+                        output.push_str(String::from_utf8(buff).unwrap().as_str());
+                    }
+
+                    self.redirector.revert_redirection();
+                }
             }
         }
         debug_success_msg!(format!("Done."));
-        Some(output)
+
+        if !self.options.collect_output {
+            return (true,None);
+        }
+
+        (true,Some(output))
     }
 
     fn clean(&self) -> bool {
@@ -611,27 +605,25 @@ impl PE_Loader {
         true
     }
 
-    pub fn execute_exe(&mut self, pe_bytes:Vec<u8>, args: String) -> Option<String> {
+    pub fn execute_exe(&mut self, pe_bytes:Vec<u8>, args: String) -> (bool, Option<String>) {
+        let mut success : bool = true;
+
         if !self.inject(pe_bytes) {
             debug_error_msg!("Failed to inject PE.");
-            return None;
+            return (false ,None);
         }
 
-        let output: String;
-        match self.execute(args) {
-            
-            None => {
-                debug_error_msg!("Failed to execute PE."); 
-                return None;
-            },
-            Some(outp) => output = outp
+        let (res, output) = self.execute(args);
+        if !res {
+            debug_error_msg!("Failed to execute PE."); 
+            success = false;
         }
 
         if !self.clean() {
             debug_error_msg!("Failed to clean PE.");
-            return None;
+            return (success, output);
         }
 
-        Some(output)
+        (success, output)
     }
 }

@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Write;
 use std::panic;
 
+use crate::common::output::OutputRedirector;
 #[allow(unused_imports)]
 use crate::debug_error;
 #[allow(unused_imports)]
@@ -34,7 +35,8 @@ pub fn do_load()
         let pe_bytes = get_pe();
         debug_success_msg!(format!("PE loaded, size = {}", pe_bytes.len()));
         let options = PE_Options {
-            patch_exit_functions: true
+            patch_exit_functions: true,
+            collect_output: true,
         };
         load(pe_bytes, options);
     });
@@ -59,15 +61,24 @@ fn get_pe() -> Vec<u8> {
 fn load(pe_bytes: Vec<u8>, options: PE_Options) {
     let args = String::from(env!("PAYLOAD_ARGUMENTS"));
     let ntdll = SyscallWrapper::new();
+    let redirector = OutputRedirector::new();
 
-    let mut pe_loader = PE_Loader::new(ntdll, options);
-    match pe_loader.execute_exe(pe_bytes.clone(), args) {
-       None => debug_error_msg!("Failed to execute PE."),
+    let mut pe_loader = PE_Loader::new(ntdll, redirector, options);
+
+    let (res, output) = pe_loader.execute_exe(pe_bytes.clone(), args);
+    if !res {
+        debug_error_msg!("Failed to execute PE."); 
+    }
+
+    match output {
+       None => debug_info_msg!("No output"),
        Some(output) => { 
-            debug_success_msg!(format!("PE Executed : output = \n{}", output));
+            //debug_success_msg!(format!("PE Executed : output = \n{}", output));
             let mut file = File::create("output.txt").unwrap();
             write!(file, "{}", output).unwrap();
         }
     }
+
+   
 }
 

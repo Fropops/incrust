@@ -56,11 +56,27 @@ pub struct PEB_LDR_DATA {
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]
 pub struct RTL_USER_PROCESS_PARAMETERS {
-    pub Reserved1: [u8; 16],
-    pub Reserved2: [*mut ::core::ffi::c_void; 10],
+    pub MaximumLength: u32,
+    pub Length: u32,
+    pub Flags: u32,
+    pub DebugFlags: u32,
+    pub ConsoleHandle: HANDLE,
+    pub ConsoleFlags: u64,
+    pub StandardInput: HANDLE, 
+    pub StandardOutput: HANDLE,
+    pub StandardError: HANDLE,
+    pub Reserved1: [u8; 16], // size = 16
+//CURDIR 	CurrentDirectory
+// => UNICODE_STRING 	DosPath
+//    HANDLE 	Handle
+ 
+    pub DllPath: UNICODE_STRING,
+    // pub Reserved1: [u8; 16], // size = 16
+    // pub Reserved2: [*mut ::core::ffi::c_void; 10], //size = 80
     pub ImagePathName: UNICODE_STRING,
     pub CommandLine: UNICODE_STRING,
 }
+
 
 impl ::core::marker::Copy for RTL_USER_PROCESS_PARAMETERS {}
 impl ::core::clone::Clone for RTL_USER_PROCESS_PARAMETERS {

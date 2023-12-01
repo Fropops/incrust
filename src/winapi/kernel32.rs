@@ -111,8 +111,8 @@ pub type CreateFileW = unsafe extern "system" fn (PWSTR, u32, u32, *mut SECURITY
 // BOOL CloseHandle(
 //         [in] HANDLE hObject
 //       );
-#[allow(unused)]
-pub type CloseHandle = unsafe extern "system" fn (HANDLE) -> BOOL;
+// #[allow(unused)]
+// pub type CloseHandle = unsafe extern "system" fn (HANDLE) -> BOOL;
 
 // DWORD GetLastError();
 #[allow(unused)]
@@ -133,4 +133,5 @@ extern "system" {
     pub fn CreatePipe(hreadpipe: *mut HANDLE, hwritepipe: *mut HANDLE, lppipeattributes: *const SECURITY_ATTRIBUTES, nsize: u32) -> BOOL;
     pub fn PeekNamedPipe(hnamedpipe: HANDLE, lpbuffer: *mut u8, nbuffersize: u32, lpbytesread: *mut u32, lptotalbytesavail: *mut u32, lpbytesleftthismessage: *mut u32) -> BOOL;
     pub fn ReadFile(hnamedpipe: HANDLE, lpbuffer: *mut u8, nNumberOfBytesToRead: u32, lpNumberOfBytesRead: *mut u32, lpOverlapped: *mut u8) -> BOOL;
+    pub fn CloseHandle(handle: HANDLE) -> BOOL;
 }
