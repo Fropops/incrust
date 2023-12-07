@@ -482,3 +482,80 @@ pub struct IMAGE_IMPORT_BY_NAME {
     pub Hint: u16,	// not used.
     pub Name: [u8; 255],
 }
+
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub struct IMAGE_TLS_DIRECTORY32 {
+    pub StartAddressOfRawData: u32,
+    pub EndAddressOfRawData: u32,
+    pub AddressOfIndex: u32,
+    pub AddressOfCallBacks: usize,
+    pub SizeOfZeroFill: u32,
+    pub Anonymous: IMAGE_TLS_DIRECTORY32_0,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub union IMAGE_TLS_DIRECTORY32_0 {
+    pub Characteristics: u32,
+    pub Anonymous: IMAGE_TLS_DIRECTORY32_0_0,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub struct IMAGE_TLS_DIRECTORY32_0_0 {
+    pub _bitfield: u32,
+}
+#[cfg(target_arch = "x86")]
+impl ::core::marker::Copy for IMAGE_TLS_DIRECTORY32_0_0 {}
+#[cfg(target_arch = "x86")]
+impl ::core::clone::Clone for IMAGE_TLS_DIRECTORY32_0_0 {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+#[repr(C, packed(4))]
+pub struct IMAGE_TLS_DIRECTORY64 {
+    pub StartAddressOfRawData: u64,
+    pub EndAddressOfRawData: u64,
+    pub AddressOfIndex: u64,
+    pub AddressOfCallBacks: usize,
+    pub SizeOfZeroFill: u32,
+    pub Anonymous: IMAGE_TLS_DIRECTORY64_0,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+pub union IMAGE_TLS_DIRECTORY64_0 {
+    pub Characteristics: u32,
+    pub Anonymous: IMAGE_TLS_DIRECTORY64_0_0,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+pub struct IMAGE_TLS_DIRECTORY64_0_0 {
+    pub _bitfield: u32,
+}
+#[cfg(target_arch = "x86_64")]
+impl ::core::marker::Copy for IMAGE_TLS_DIRECTORY64_0_0 {}
+#[cfg(target_arch = "x86_64")]
+impl ::core::clone::Clone for IMAGE_TLS_DIRECTORY64_0_0 {
+    fn clone(&self) -> Self {
+        *self
+    }
+}

@@ -1,9 +1,9 @@
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 use std::ptr::{null, null_mut};
 
-use crate::common::output::{OutputRedirector, RedirectionType};
+use crate::common::output::OutputRedirector;
 use crate::common::helpers::ascii_bytes_to_string;
-use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE};
+use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE, DLL_PROCESS_DETACH};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
 use crate::winapi::kernel32::FlushInstructionCache;
 use crate::winapi::ntdll::{RtlExitUserThread, RtlCreateUnicodeString};
@@ -14,13 +14,28 @@ use crate::{debug_error, debug_info, debug_info_msg, debug_success_msg, debug_ok
 #[allow(unused_imports)]
 use crate::{debug_base, debug_base_msg, debug_base_hex};
 
-use super::constants::{IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT, FALSE};
+use super::constants::{IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_BASERELOC, IMAGE_DIRECTORY_ENTRY_TLS, IMAGE_DIRECTORY_ENTRY_EXCEPTION, IMAGE_DIRECTORY_ENTRY_EXPORT, FALSE, DLL_PROCESS_ATTACH};
 use super::dll_functions::get_dll_base_address;
 use super::kernel32::GetCommandLineW;
 use super::nt::syscall_wrapper::SyscallWrapper;
 use super::structs::{IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY, IMAGE_IMPORT_DESCRIPTOR};
-use super::types::PCSTR;
+use super::types::{PCSTR, P_IMAGE_TLS_DIRECTORY, P_FN_IMAGE_TLS_CALLBACK};
 use super::{types::{IMAGE_NT_HEADERS, IMAGE_OPTIONAL_HEADER}, structs::IMAGE_DOS_HEADER, constants::{IMAGE_DOS_SIGNATURE, IMAGE_NT_SIGNATURE, IMAGE_NT_OPTIONAL_HDR_MAGIC, IMAGE_FILE_DLL, STATUS_SUCCESS}};
+
+static mut MSVCRT_USED: bool = false;
+static mut UCRTBASE_USED: bool = false;
+
+static mut THREAD_ENDED: bool = false;
+fn hook_exit(statuscode: i32)
+{
+    unsafe {
+        THREAD_ENDED = true;
+	RtlExitUserThread(0);
+    }
+}
+
+
+
 
 #[repr(C)]
 #[allow(non_snake_case)]
@@ -240,6 +255,11 @@ impl PE_Loader {
     }
 
     fn adapt_iat(&mut self) -> bool {
+        unsafe {
+            MSVCRT_USED = false;
+            UCRTBASE_USED = false;
+        }
+
         debug_info_msg!(format!("Adapting Import Adress Table ..."));
         let mut img_desc_ptr : *const IMAGE_IMPORT_DESCRIPTOR;
 
@@ -256,6 +276,14 @@ impl PE_Loader {
                 let dll_name_address = (self.infos.pe_base_address as usize + (*img_desc_ptr).Name as usize) as *const u8;
                 let dll_name_pcstr = PCSTR::from_raw(dll_name_address);
                 let dll_name = dll_name_pcstr.to_string().unwrap();
+
+                if dll_name.to_lowercase() == "msvcrt.dll" {
+                    MSVCRT_USED = true;
+                }
+
+                if dll_name.to_lowercase() == "ucrtbase.dll" {
+                    UCRTBASE_USED = true;
+                }
 
                 let int_thunk_rva = (*img_desc_ptr).Anonymous.OriginalFirstThunk as usize;
 		        let iat_thunk_rva = (*img_desc_ptr).FirstThunk as usize;
@@ -304,7 +332,7 @@ impl PE_Loader {
                         //Hook exit functions to prevent process to be closed
                         if self.options.patch_exit_functions {
                             if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
-                                (*iat_thunk_ptr).u1.Function = RtlExitUserThread as usize;
+                                (*iat_thunk_ptr).u1.Function = hook_exit as usize;
                                 #[cfg(feature = "verbose")]
                                 debug_info_msg!(format!("Patching {} at {:#x} instead of {:#x}", function_name, function_address, before));
                             }
@@ -512,6 +540,43 @@ impl PE_Loader {
         true
     }
 
+    fn execute_tls_callbacks(&mut self, attach: bool) -> bool {
+        unsafe {
+            if (*self.infos.entry_TLS_data_dir_ptr).Size == 0 {
+                return true;
+            }
+
+            if attach {
+            debug_info_msg!(format!("Executing TLS Callbacks before execution ..."));
+            }
+            else {
+                debug_info_msg!(format!("Executing TLS Callbacks after execution ..."));
+            }
+
+            let img_tls_directory_ptr : P_IMAGE_TLS_DIRECTORY = (self.infos.pe_base_address as usize + (*self.infos.entry_TLS_data_dir_ptr).VirtualAddress as usize)as P_IMAGE_TLS_DIRECTORY;
+            let mut img_fn_tls_callback_array = (*img_tls_directory_ptr).AddressOfCallBacks as *mut usize;
+            
+            let mut ctxt = [0u8;1232];
+            while (*img_fn_tls_callback_array) as usize != 0 {
+                
+                let img_fn_tls_callback_ptr = transmute::<usize, P_FN_IMAGE_TLS_CALLBACK>(*img_fn_tls_callback_array);
+                if attach {
+                    (img_fn_tls_callback_ptr)(self.infos.pe_base_address as *mut u8, DLL_PROCESS_ATTACH, ctxt.as_mut_ptr());
+                }
+                else {
+                    (img_fn_tls_callback_ptr)(self.infos.pe_base_address as *mut u8, DLL_PROCESS_DETACH, ctxt.as_mut_ptr());
+                }
+
+                img_fn_tls_callback_array = (img_fn_tls_callback_array as usize + size_of::<usize>()) as *mut usize;
+                
+            }
+        }
+
+        debug_info_msg!(format!("Done."));
+
+        true
+    }
+
     fn execute(&mut self, args: String) -> (bool, Option<String>) {
         debug_info_msg!(format!("Executing with args {} ...", args));
 
@@ -524,6 +589,12 @@ impl PE_Loader {
         unsafe {
             FlushInstructionCache(-1 as HANDLE, null_mut(), 0);
         }
+
+       
+        if !self.execute_tls_callbacks(true) {
+            return (false, None);
+        }
+
 
         if self.infos.is_dll {
             
@@ -544,23 +615,39 @@ impl PE_Loader {
                 let entry_point = self.infos.pe_base_address as usize + (*self.infos.nt_header_ptr).OptionalHeader.AddressOfEntryPoint as usize;
 
                 if self.options.collect_output {
-                    self.redirector.redirect_outputs(RedirectionType::Msvcrt);
+                    self.redirector.redirect_outputs(MSVCRT_USED, UCRTBASE_USED);
                 }
 
 
-                let mut thread_handle: HANDLE = 0;
-                let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, entry_point);
-                if res != STATUS_SUCCESS {
-                    debug_error_msg!("Failed to start thread!");
-                    return (false, None);
-                }
+                // let mut thread_handle: HANDLE = 0;
+                // let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, entry_point);
+                // if res != STATUS_SUCCESS {
+                //     debug_error_msg!("Failed to start thread!");
+                //     return (false, None);
+                // }
 
-                self.infos.thread_handle = thread_handle;
-                res =  self.ntdll.nt_wait_for_single_object(thread_handle);
-                if res != STATUS_SUCCESS {
-                    debug_error_msg!("Failed to wait!");
-                    return (false,None);
+                // self.infos.thread_handle = thread_handle;
+
+                // //std::thread::sleep(std::time::Duration::from_secs(5));
+                // res =  self.ntdll.nt_wait_for_single_object(thread_handle);
+                // if res != STATUS_SUCCESS {
+                //     debug_error_msg!("Failed to wait!");
+                //     return (false,None);
+                // }
+
+                let func: extern "C" fn() -> u32 = core::mem::transmute(entry_point);
+            // func();
+
+                let _ = std::thread::spawn(move || {
+                    func();
+                });
+
+                while ! THREAD_ENDED {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
+                
+                //let _ = handle.join();
+                //handle.join().expect("Couldn't join on the associated thread");
 
                 if self.options.collect_output {
                     while let Some(buff) = self.redirector.read_outputs() {
@@ -569,6 +656,8 @@ impl PE_Loader {
 
                     self.redirector.revert_redirection();
                 }
+
+                let _ = self.execute_tls_callbacks(false);
             }
         }
         debug_success_msg!(format!("Done."));

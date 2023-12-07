@@ -44,6 +44,7 @@ pub fn do_load()
         Err(_) => debug_error_msg!(format!("An Error occured")),
         _ => ()
     }
+
 }
 
 #[cfg(all(feature = "payload_b64"))]

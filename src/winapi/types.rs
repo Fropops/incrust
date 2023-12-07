@@ -284,3 +284,20 @@ use super::structs::IMAGE_THUNK_DATA32;
 #[cfg(target_arch = "x86")]
 pub type IMAGE_THUNK_DATA = IMAGE_THUNK_DATA32;
 
+#[cfg(target_arch = "x86_64")]
+use super::structs::IMAGE_TLS_DIRECTORY64;
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86_64")]
+pub type IMAGE_TLS_DIRECTORY = IMAGE_TLS_DIRECTORY64;
+
+#[cfg(target_arch = "x86")]
+use super::structs::IMAGE_TLS_DIRECTORY32;
+#[allow(non_camel_case_types)]
+#[cfg(target_arch = "x86")]
+pub type IMAGE_TLS_DIRECTORY = IMAGE_TLS_DIRECTORY32;
+
+#[allow(non_camel_case_types)]
+pub type P_IMAGE_TLS_DIRECTORY = *mut IMAGE_TLS_DIRECTORY;
+
+#[allow(non_camel_case_types)]
+pub type P_FN_IMAGE_TLS_CALLBACK = unsafe extern "system" fn(dllhandle: *mut u8, reason: u32, reserved: *mut u8);

@@ -118,6 +118,17 @@ pub type CreateFileW = unsafe extern "system" fn (PWSTR, u32, u32, *mut SECURITY
 #[allow(unused)]
 pub type GetLastError = unsafe extern "system" fn () -> u32;
 
+// pub unsafe fn  __hook_exit(id: u32)
+// {
+//     ExitThread(id);
+//     return;
+// }
+
+// pub unsafe fn __hook_exit_process(id: u32)
+// {
+//     ExitThread(id);
+//     return;
+// }
 
 #[allow(unused)]
 #[link(name = "kernel32")]
@@ -134,4 +145,9 @@ extern "system" {
     pub fn PeekNamedPipe(hnamedpipe: HANDLE, lpbuffer: *mut u8, nbuffersize: u32, lpbytesread: *mut u32, lptotalbytesavail: *mut u32, lpbytesleftthismessage: *mut u32) -> BOOL;
     pub fn ReadFile(hnamedpipe: HANDLE, lpbuffer: *mut u8, nNumberOfBytesToRead: u32, lpNumberOfBytesRead: *mut u32, lpOverlapped: *mut u8) -> BOOL;
     pub fn CloseHandle(handle: HANDLE) -> BOOL;
+
+    pub fn GetThreadContext(hThread: HANDLE, lpContext : *mut u8) -> BOOL;
+    pub fn GetCurrentThread() -> HANDLE;
+    pub fn ExitThread(id: u32);
+    pub fn TerminateThread(hThread: HANDLE, dwExitCode:u32) -> BOOL;
 }

@@ -129,4 +129,8 @@ pub const STD_ERROR_HANDLE: STD_HANDLE = 4294967284u32;
 #[allow(dead_code)]
 pub const STD_OUTPUT_HANDLE: STD_HANDLE = 4294967285u32;
 
+#[allow(dead_code)]
+pub const DLL_PROCESS_ATTACH: u32 = 1u32;
+#[allow(dead_code)]
+pub const DLL_PROCESS_DETACH: u32 = 0u32;
 

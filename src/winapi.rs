@@ -7,4 +7,3 @@ pub mod nt;
 pub mod pe_loader;
 pub mod kernel32;
 pub mod ntdll;
-pub mod libc;
