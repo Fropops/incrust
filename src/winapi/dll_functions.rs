@@ -16,6 +16,20 @@ use super::constants::IMAGE_NT_OPTIONAL_HDR_MAGIC;
 use super::types::HINSTANCE;
 
 use crate::common::error::Result;
+pub struct FunctionLoadInfo {
+    pub dll_name: Option<String>,
+    pub func_name: Option<String>,
+    pub func_ord: Option<u16>,
+    pub address: Option<usize>,
+    pub module_handle: Option<HINSTANCE>,
+    pub loaded_in_memory: bool,
+}
+
+impl Default for FunctionLoadInfo {
+    fn default() -> Self {
+        Self { dll_name: Default::default(), func_ord: Default::default(), func_name: Default::default(), address: Default::default(), module_handle: Default::default(), loaded_in_memory: Default::default() }
+    }
+}
 
 
 use core::arch::asm;
@@ -72,7 +86,7 @@ pub fn get_peb() -> PEB {
 }
 
 #[allow(dead_code)]
-pub fn get_dll_base_address(module_name: &str) -> HINSTANCE {
+pub fn get_dll_base_address(module_name: &str) -> Option<HINSTANCE> {
     unsafe {
         let peb = get_peb();
         let mut p_ldr_data_table_entry: *const LDR_DATA_TABLE_ENTRY = (*peb.Ldr).InMemoryOrderModuleList.Flink as *const LDR_DATA_TABLE_ENTRY;
@@ -83,12 +97,12 @@ pub fn get_dll_base_address(module_name: &str) -> HINSTANCE {
             
             //last element of the list => shoudl stop the loop
             if p_list_entry == (*peb.Ldr).InMemoryOrderModuleList.Blink {
-                return 0
+                return None
             }
 
             if module_name.to_lowercase() == dll_name.to_lowercase() {
                 let module_base: HINSTANCE = (*p_ldr_data_table_entry).Reserved2[0] as HINSTANCE;
-                return module_base;
+                return Some(module_base);
             }
 
             //go to next element of the list
@@ -98,7 +112,7 @@ pub fn get_dll_base_address(module_name: &str) -> HINSTANCE {
     }
 }
 
-pub fn get_dll_proc_address_forwarded(dll_and_func_name: &str) -> usize {
+pub fn get_dll_proc_address_forwarded(dll_and_func_name: &str) -> FunctionLoadInfo {
     let parts: Vec<&str> = dll_and_func_name.split(".").collect();
     let dll_name = parts[0];
     let dll_func = parts[1];
@@ -107,25 +121,46 @@ pub fn get_dll_proc_address_forwarded(dll_and_func_name: &str) -> usize {
 }
 
 #[allow(dead_code)]
-pub fn get_dll_proc_address(dll_name: &str, function_name: &str) -> usize {
+pub fn get_dll_proc_address(dll_name: &str, function_name: &str) -> FunctionLoadInfo {
     unsafe {
-        let mut dll_name_str : String = String::from(dll_name);
+        let mut fn_load_info = FunctionLoadInfo::default();
+        fn_load_info.dll_name = Some(String::from(dll_name));
+        fn_load_info.func_name = Some(String::from(function_name));
+
+        let mut dll_name_str = String::from(dll_name);
         dll_name_str.push('\0');
 
-        let dll_handle = LoadLibraryA(PCSTR::from_raw(dll_name_str.as_bytes().as_ptr()));
-        if dll_handle == 0 {
-            return 0;
+        let local_handle = get_dll_base_address(dll_name);
+        match local_handle {
+            None => {
+                let loaded_handle = LoadLibraryA(PCSTR::from_raw(dll_name_str.as_bytes().as_ptr()));
+                if loaded_handle == 0 {
+                    return fn_load_info;
+                }
+                fn_load_info.loaded_in_memory = true;
+                fn_load_info.module_handle = Some(loaded_handle);
+            },
+            Some(handle) => fn_load_info.module_handle = Some(handle)
         }
 
-        let fn_adr = get_proc_address(dll_handle, function_name);
-        
-        return fn_adr;
+        let mut info = get_proc_address(fn_load_info.module_handle.unwrap(), function_name);
+        if info.dll_name.is_none() {
+            info.dll_name = fn_load_info.dll_name.clone();
+            if fn_load_info.loaded_in_memory {
+                info.loaded_in_memory = true;
+            }
+        }
+        return info;
     }
 }
 
 
 #[allow(dead_code)]
-pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize {
+pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> FunctionLoadInfo {
+    let mut fn_load_info = FunctionLoadInfo::default();
+    fn_load_info.func_name = Some(String::from(function_name));
+    fn_load_info.module_handle = Some(module_handle);
+
     let dos_headers: *const IMAGE_DOS_HEADER;
     let nt_headers: *const IMAGE_NT_HEADERS;
     let optional_header: * const IMAGE_OPTIONAL_HEADER;
@@ -139,16 +174,19 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
         dos_headers = module_handle as *const IMAGE_DOS_HEADER;
         if (*dos_headers).e_magic != IMAGE_DOS_SIGNATURE {
             debug_error!("Invalid dos signature!");
+            return fn_load_info;
         }
 
         nt_headers = (module_handle as usize + (*dos_headers).e_lfanew as usize) as *const IMAGE_NT_HEADERS;
         if (*nt_headers).Signature != IMAGE_NT_SIGNATURE {
             debug_error!("Invalid NT signature!");
+            return fn_load_info;
         }
 
         optional_header	= &(*nt_headers).OptionalHeader;
         if (*optional_header).Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC {
             debug_error!("Invalid Optional Header signature!");
+            return fn_load_info;
         }
 
         data_directory = (&(*optional_header).DataDirectory[0]) as *const IMAGE_DATA_DIRECTORY;
@@ -158,15 +196,13 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
         function_ordinals_array = (module_handle as usize + (*export_directory).AddressOfNameOrdinals as usize) as usize;
         
         //debug_info!((*export_directory).NumberOfFunctions);
-        // let first_ord = *(function_ordinals_array as *const u16) as u32; //Was here to correct a 32bit ntdll loading issue in win7
-        // for _index in first_ord..(*export_directory).NumberOfFunctions { 
-        for _index in 0..(*export_directory).NumberOfFunctions { 
+        for _index in 0..(*export_directory).NumberOfNames { 
             let name_offest: u32 = *(function_name_array as *const u32);
 
             let fun_name = std::ffi::CStr::from_ptr(
                 (module_handle as usize + name_offest as usize) as *const i8
             ).to_str().unwrap();
-            
+
             let fun_ord = *(function_ordinals_array as *const u16);
             let address_ptr = function_address_array + fun_ord as usize * (std::mem::size_of::<u32>() as usize);
             let fun_rva = *(address_ptr as *const u32) as usize;
@@ -177,38 +213,63 @@ pub fn get_proc_address(module_handle: HINSTANCE, function_name: &str) -> usize 
                     
                     let forward_name_pcstr = PCSTR::from_raw((module_handle as usize + fun_rva) as *const u8);
                     let forward_name = forward_name_pcstr.to_string().unwrap();
-                    let fn_adr = get_dll_proc_address_forwarded(forward_name.as_str());
+                    let inf = get_dll_proc_address_forwarded(forward_name.as_str());
                     //debug_info_msg!(format!("forwarded from {} to {}, found at {:#x}", fun_name, forward_name, fn_adr));
-                    return fn_adr;
+                    return inf;
                 }
-                return module_handle as usize + *(address_ptr as *const u32) as usize;
+
+                fn_load_info.address = Some(module_handle as usize + *(address_ptr as *const u32) as usize);
+                return fn_load_info;
             }
 
             function_name_array = function_name_array + std::mem::size_of::<u32>() as usize;
             function_ordinals_array = function_ordinals_array + std::mem::size_of::<u16>() as usize;
         }
-        return 0;
+        return fn_load_info;
     }
 }
 
 
-pub fn get_dll_proc_address_by_ordinal_index(dll_name: &str, ordinal_index: u16) -> usize {
+pub fn get_dll_proc_address_by_ordinal_index(dll_name: &str, ordinal_index: u16) -> FunctionLoadInfo {
+    let mut fn_load_info = FunctionLoadInfo::default();
+    fn_load_info.dll_name = Some(String::from(dll_name));
+    fn_load_info.func_ord = Some(ordinal_index);
+
+
     unsafe {
-        let mut dll_name_str : String = String::from(dll_name);
+        let mut dll_name_str = String::from(dll_name);
         dll_name_str.push('\0');
 
-        let dll_handle = LoadLibraryA(PCSTR::from_raw(dll_name_str.as_bytes().as_ptr()));
-        if dll_handle == 0 {
-            return 0;
+        let local_handle = get_dll_base_address(dll_name);
+        match local_handle {
+            None => {
+                let loaded_handle = LoadLibraryA(PCSTR::from_raw(dll_name_str.as_bytes().as_ptr()));
+                if loaded_handle == 0 {
+                    return fn_load_info;
+                }
+                fn_load_info.loaded_in_memory = true;
+                fn_load_info.module_handle = Some(loaded_handle);
+            },
+            Some(handle) => fn_load_info.module_handle = Some(handle)
         }
-        let fn_adr = get_proc_address_by_ordinal_index(dll_handle, ordinal_index);
-        
-        return fn_adr;
+
+        let mut info = get_proc_address_by_ordinal_index(fn_load_info.module_handle.unwrap(), ordinal_index);
+        if info.dll_name.is_none() {
+            info.dll_name = fn_load_info.dll_name.clone();
+            if fn_load_info.loaded_in_memory {
+                info.loaded_in_memory = true;
+            }
+        }
+        return info;
     }
 }
 
 #[allow(dead_code)]
-pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index: u16) -> usize {
+pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index: u16) -> FunctionLoadInfo {
+    let mut fn_load_info = FunctionLoadInfo::default();
+    fn_load_info.module_handle = Some(module_handle);
+    fn_load_info.func_ord = Some(ordinal_index);
+
     let dos_headers: *const IMAGE_DOS_HEADER;
     let nt_headers: *const IMAGE_NT_HEADERS;
     let optional_header: * const IMAGE_OPTIONAL_HEADER;
@@ -220,16 +281,19 @@ pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index
         dos_headers = module_handle as *const IMAGE_DOS_HEADER;
         if (*dos_headers).e_magic != IMAGE_DOS_SIGNATURE {
             debug_error!("Invalid dos signature!");
+            return fn_load_info;
         }
 
         nt_headers = (module_handle as usize + (*dos_headers).e_lfanew as usize) as *const IMAGE_NT_HEADERS;
         if (*nt_headers).Signature != IMAGE_NT_SIGNATURE {
             debug_error!("Invalid NT signature!");
+            return fn_load_info;
         }
 
         optional_header	= &(*nt_headers).OptionalHeader;
         if (*optional_header).Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC {
             debug_error!("Invalid Optional Header signature!");
+            return fn_load_info;
         }
 
         data_directory = (&(*optional_header).DataDirectory[0]) as *const IMAGE_DATA_DIRECTORY;
@@ -245,15 +309,16 @@ pub fn get_proc_address_by_ordinal_index(module_handle: HINSTANCE, ordinal_index
                 if fun_rva > (*data_directory).VirtualAddress as usize && fun_rva < (*data_directory).VirtualAddress as usize + (*data_directory).Size as usize {
                     let forward_name_pcstr = PCSTR::from_raw((module_handle as usize + fun_rva) as *const u8);
                     let forward_name = forward_name_pcstr.to_string().unwrap();
-                    let fn_adr = get_dll_proc_address_forwarded(forward_name.as_str());
+                    let info = get_dll_proc_address_forwarded(forward_name.as_str());
                     //debug_info_msg!(format!("forwarded from #{} to {}, found at {:#x}", ordinal_index, forward_name, fn_adr));
-                    return fn_adr;
+                    return info;
                 }
                 //debug_info_hex!(*(address_ptr as *const u32) as usize);
-                return module_handle as usize + *(address_ptr as *const u32) as usize;
+                fn_load_info.address = Some(module_handle as usize + *(address_ptr as *const u32) as usize);
+                return fn_load_info;
             }
         }
-        return 0;
+        return fn_load_info;
     }
 }
 
@@ -318,11 +383,7 @@ pub fn get_dll_functions(module_handle: HINSTANCE) -> Result<Vec<FunctionInfo>> 
         function_name_array = (module_handle as usize + (*export_directory).AddressOfNames as usize) as usize;
         function_ordinals_array = (module_handle as usize + (*export_directory).AddressOfNameOrdinals as usize) as usize;
 
-        // debug_info_hex!(function_address_array); 
-        // debug_info_hex!(function_name_array); 
-        // debug_info_hex!(function_ordinals_array); 
-        
-        //debug_info!((*export_directory).NumberOfFunctions);
+
         let first_ord = *(function_ordinals_array as *const u16) as u32;
         for _index in first_ord..(*export_directory).NumberOfFunctions { 
             //debug_info_msg!(format!("{} of {}",_index,(*export_directory).NumberOfFunctions));
@@ -335,9 +396,6 @@ pub fn get_dll_functions(module_handle: HINSTANCE) -> Result<Vec<FunctionInfo>> 
             let fun_ord = *(function_ordinals_array as *const u16);
             let address_ptr = function_address_array + fun_ord as usize * (std::mem::size_of::<u32>() as usize);
             let fun_addr = module_handle as usize + *(address_ptr as *const u32) as usize;
-            // debug_info!(fun_name);
-            // debug_info!(fun_ord);
-            // debug_info_hex!(fun_addr); 
 
             function_name_array = function_name_array + std::mem::size_of::<u32>() as usize;
             function_ordinals_array = function_ordinals_array + std::mem::size_of::<u16>() as usize;

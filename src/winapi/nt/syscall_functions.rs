@@ -51,7 +51,7 @@ pub fn load_nt_syscall_info() -> Result<Vec<FunctionInfo>> {
     let nt_dll_name = lc!("ntdll.dll");
     let nt_base_address = get_dll_base_address(nt_dll_name.to_lowercase().as_str());
 
-    let mut all_functions = get_dll_functions(nt_base_address)?;
+    let mut all_functions = get_dll_functions(nt_base_address.unwrap())?;
     all_functions.sort_by(|a, b| a.address.cmp(&b.address));
 
     let mut nt_functions: Vec<FunctionInfo> = vec![];

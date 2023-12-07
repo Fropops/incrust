@@ -1,10 +1,10 @@
-// #![cfg_attr(
-//     all(
-//       target_os = "windows",
-//       feature = "no_console",
-//     ),
-//     windows_subsystem = "windows"
-//   )]
+#![cfg_attr(
+    all(
+      target_os = "windows",
+      feature = "no_console",
+    ),
+    windows_subsystem = "windows"
+  )]
 
 #[macro_use]
 extern crate litcrypt;

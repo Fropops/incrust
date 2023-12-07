@@ -209,10 +209,10 @@ impl OutputRedirector {
         unsafe {
             if msvcrt {
                 if self.api_calls.msvcrt_open_osfhandle.is_none() {
-                    self.api_calls.msvcrt_open_osfhandle = Some(mem::transmute::<usize, MsvcrtOpenOsfhandle>(get_dll_proc_address("msvcrt.dll","_open_osfhandle")));
+                    self.api_calls.msvcrt_open_osfhandle = Some(mem::transmute::<usize, MsvcrtOpenOsfhandle>(get_dll_proc_address("msvcrt.dll","_open_osfhandle").address.unwrap()));
                 }
                 if self.api_calls.msvcrt_iob_func.is_none() {
-                    self.api_calls.msvcrt_iob_func = Some(mem::transmute::<usize, MsvcrtIobFunc>(get_dll_proc_address("msvcrt.dll","__iob_func")));
+                    self.api_calls.msvcrt_iob_func = Some(mem::transmute::<usize, MsvcrtIobFunc>(get_dll_proc_address("msvcrt.dll","__iob_func").address.unwrap()));
                 }
 
                 if self.handles.msvcrt_os_handle == 0 { 
@@ -246,10 +246,10 @@ impl OutputRedirector {
             
             if ucrt {
                 if self.api_calls.ucrt_open_osfhandle.is_none() {
-                    self.api_calls.ucrt_open_osfhandle = Some(mem::transmute::<usize, UcrtOpenOsfhandle>(get_dll_proc_address("ucrtbase.dll","_open_osfhandle")));
+                    self.api_calls.ucrt_open_osfhandle = Some(mem::transmute::<usize, UcrtOpenOsfhandle>(get_dll_proc_address("ucrtbase.dll","_open_osfhandle").address.unwrap()));
                 }
                 if self.api_calls.ucrt_iob_func.is_none() {
-                    self.api_calls.ucrt_iob_func = Some(mem::transmute::<usize, UcrtIobFunc>(get_dll_proc_address("ucrtbase.dll","__acrt_iob_func")));
+                    self.api_calls.ucrt_iob_func = Some(mem::transmute::<usize, UcrtIobFunc>(get_dll_proc_address("ucrtbase.dll","__acrt_iob_func").address.unwrap()));
                 }
 
                 if self.handles.ucrt_os_handle == 0 { 

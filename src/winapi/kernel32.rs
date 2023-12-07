@@ -137,6 +137,7 @@ extern "system" {
     pub fn GetCommandLineW() -> PWSTR;
     pub fn GetStdHandle(nstdhandle : STD_HANDLE) -> HANDLE;
     pub fn LoadLibraryA(lp_lib_file_name: PCSTR) -> HINSTANCE;
+    pub fn FreeLibrary(hLibModule: HINSTANCE) -> BOOL;
     pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: PCSTR) -> usize;
     pub fn SetStdHandle(nstdhandle: STD_HANDLE, hhandle: HANDLE) -> BOOL;
     pub fn AllocConsole() -> BOOL;

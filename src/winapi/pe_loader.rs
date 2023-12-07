@@ -3,9 +3,9 @@ use std::ptr::{null, null_mut};
 
 use crate::common::output::OutputRedirector;
 use crate::common::helpers::ascii_bytes_to_string;
-use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, MEM_RELEASE, DLL_PROCESS_DETACH};
+use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, MEM_RELEASE, DLL_PROCESS_DETACH, THREAD_ALL_ACCESS, TRUE};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
-use crate::winapi::kernel32::FlushInstructionCache;
+use crate::winapi::kernel32::{FlushInstructionCache, FreeLibrary};
 use crate::winapi::ntdll::{RtlExitUserThread, RtlCreateUnicodeString};
 use crate::winapi::structs::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_BY_NAME, UNICODE_STRING};
 use crate::winapi::types::{HANDLE, BASE_RELOCATION_ENTRY, IMAGE_THUNK_DATA, PWSTR};
@@ -21,17 +21,6 @@ use super::nt::syscall_wrapper::SyscallWrapper;
 use super::structs::{IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY, IMAGE_IMPORT_DESCRIPTOR};
 use super::types::{PCSTR, P_IMAGE_TLS_DIRECTORY, P_FN_IMAGE_TLS_CALLBACK};
 use super::{types::{IMAGE_NT_HEADERS, IMAGE_OPTIONAL_HEADER}, structs::IMAGE_DOS_HEADER, constants::{IMAGE_DOS_SIGNATURE, IMAGE_NT_SIGNATURE, IMAGE_NT_OPTIONAL_HDR_MAGIC, IMAGE_FILE_DLL, STATUS_SUCCESS}};
-
-static mut THREAD_ENDED: bool = false;
-
-fn hook_exit(statuscode: u32)
-{
-    unsafe {
-        THREAD_ENDED = true;
-	    RtlExitUserThread(statuscode);
-    }
-}
-
 
 #[repr(C)]
 #[allow(non_snake_case)]
@@ -93,6 +82,7 @@ pub struct PE_Loader {
     ntdll: SyscallWrapper,
     redirector: OutputRedirector,
     loaded_dlls: Vec<String>,
+    used_dlls: Vec<String>,
 }
 
 impl PE_Loader {
@@ -103,6 +93,7 @@ impl PE_Loader {
             options: options,
             pe_bytes: vec![0],
             redirector: redirector,
+            used_dlls: vec![],
             loaded_dlls: vec![],
         }
     }
@@ -115,6 +106,9 @@ impl PE_Loader {
         
         let pe_base_address = pe_bytes.as_ptr();
         self.pe_bytes = pe_bytes;
+
+        self.used_dlls = vec![];
+        self.loaded_dlls = vec![];
 
         unsafe {
             dos_headers = pe_base_address as *const IMAGE_DOS_HEADER;
@@ -185,7 +179,6 @@ impl PE_Loader {
                 let size = (*img_section_hdr_ptr).SizeOfRawData as usize;
                 std::ptr::copy_nonoverlapping(src, dst, size);
 
-                //#[cfg(any(feature = "verbose", feature= "print_debug" ))]
                 #[cfg(feature = "verbose")]
                 debug_ok_msg!(format!("section {} copied (size={}) dst : {:#x} src : {:#x} ...", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), size, dst as usize, src as usize));
 
@@ -271,11 +264,7 @@ impl PE_Loader {
                 let dll_name_pcstr = PCSTR::from_raw(dll_name_address);
                 let dll_name = dll_name_pcstr.to_string().unwrap().to_lowercase();
 
-                if !self.loaded_dlls.contains(&dll_name) {
-                    self.loaded_dlls.push(dll_name.clone());
-                    debug_info!(&dll_name);
-                }
-
+                
 
                 let int_thunk_rva = (*img_desc_ptr).Anonymous.OriginalFirstThunk as usize;
 		        let iat_thunk_rva = (*img_desc_ptr).FirstThunk as usize;
@@ -298,35 +287,71 @@ impl PE_Loader {
 
                         //load by ordinal                    
                         let ordinal = ((*int_thunk_ptr).u1.Ordinal & 0xffff) as u16;
-                        let function_address = get_dll_proc_address_by_ordinal_index(&dll_name, ordinal) as usize;
-                        if  function_address == 0  {
+                        let info = get_dll_proc_address_by_ordinal_index(&dll_name, ordinal);
+                        if info.address.is_none() { 
                             crate::debug_error_msg!(format!("Failed importing {}", ordinal));
                             return false;
                         }
-                        (*iat_thunk_ptr).u1.Function = function_address;
+                        (*iat_thunk_ptr).u1.Function = info.address.unwrap();
+
+                        let mut real_dll = dll_name.clone();
+                        if info.dll_name.is_some() {
+                            real_dll = info.dll_name.unwrap();
+                        }
+
+                        if !self.used_dlls.contains(&real_dll) {
+                            self.used_dlls.push(real_dll.clone());
+                            //debug_info_msg!(format!("used dlls += {}", &real_dll));
+                        }
+
+                        if info.loaded_in_memory && !self.loaded_dlls.contains(&real_dll)  {
+                            self.loaded_dlls.push(real_dll.clone());
+                            //debug_info_msg!(format!("loaded dlls += {}", &real_dll));
+                        }
+
                         #[cfg(feature = "verbose")]
-                        debug_info_msg!(format!("loading function {}#{} at {:#x}", dll_name, ordinal, function_address));
+                        debug_info_msg!(format!("loading function {}#{} at {:#x}", dll_name, ordinal, info.address.unwrap()));
                     }
                     else {
                         //load by name
                         let img_import_name_ptr = (self.infos.pe_base_address as usize + (*int_thunk_ptr).u1.AddressOfData as usize) as *const IMAGE_IMPORT_BY_NAME;
                         let function_name = ascii_bytes_to_string(&(*img_import_name_ptr).Name);
-                        let function_address = get_dll_proc_address(&dll_name, &function_name) as usize;
-                        if  function_address == 0  {
+
+                        // if dll_name.to_lowercase() == "kernel32.dll" {
+                        //     debug_info_msg!(format!("test {} {}", &dll_name, &function_name));
+                        // }
+
+                        let info = get_dll_proc_address(&dll_name, &function_name);
+                        if  info.address.is_none()  {
                             crate::debug_error_msg!(format!("Failed importing {}", function_name));
                             return false;
                         }
                         #[cfg(feature = "verbose")]
-                        debug_info_msg!(format!("loading function {} at {:#x}", function_name, function_address));
-                        (*iat_thunk_ptr).u1.Function = function_address;
+                        debug_info_msg!(format!("loading function {} at {:#x}", function_name, info.address.unwrap()));
+                        (*iat_thunk_ptr).u1.Function = info.address.unwrap();
+
+                        let mut real_dll = dll_name.clone();
+                        if info.dll_name.is_some() {
+                            real_dll = info.dll_name.unwrap();
+                        }
+
+                        if !self.used_dlls.contains(&real_dll) {
+                            self.used_dlls.push(real_dll.clone());
+                            //debug_info_msg!(format!("used dlls += {}", &real_dll));
+                        }
+
+                        if info.loaded_in_memory && !self.loaded_dlls.contains(&real_dll)  {
+                            self.loaded_dlls.push(real_dll.clone());
+                            //debug_info_msg!(format!("loaded dlls += {}", &real_dll));
+                        }
 
 
                         //Hook exit functions to prevent process to be closed
                         if self.options.patch_exit_functions {
                             if function_name == "ExitProcess" || function_name == "exit" || function_name == "_Exit" || function_name == "_exit" || function_name == "quick_exit" {
-                                (*iat_thunk_ptr).u1.Function = hook_exit as usize;
+                                (*iat_thunk_ptr).u1.Function = RtlExitUserThread as usize;
                                 #[cfg(feature = "verbose")]
-                                debug_info_msg!(format!("Patching {} at {:#x} instead of {:#x}", function_name, function_address, before));
+                                debug_info_msg!(format!("Patching {} at {:#x}", function_name, info.address.unwrap()));
                             }
                         }
                     }
@@ -379,7 +404,7 @@ impl PE_Loader {
                 }
 
                 #[cfg(feature = "verbose")]
-                debug_ok_msg!(format!("change memory protection of {} (size={}) at {:#x} to value {}", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), (*img_section_hdr_ptr).SizeOfRawData, self.infos.pe_section_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize, protection));
+                debug_ok_msg!(format!("change memory protection of {} (size={}) at {:#x} to value {}", ascii_bytes_to_string(&(*img_section_hdr_ptr).Name), (*img_section_hdr_ptr).SizeOfRawData, self.infos.pe_base_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize, protection));
 
                 let res =  self.ntdll.nt_protect_virtual_memory(-1, &mut (self.infos.pe_base_address as usize + (*img_section_hdr_ptr).VirtualAddress as usize), &mut ((*img_section_hdr_ptr).SizeOfRawData as usize), protection, &mut old_protection);
                 if res != STATUS_SUCCESS {
@@ -414,8 +439,8 @@ impl PE_Loader {
                 debug_error_msg!("Failed to create new arguments Unicode_string!");
                 return false;
             }
-            debug_info_msg!(format!("__warg = {:#x}", new_args_us_pointer as usize));
-            debug_info_msg!(format!("__warg buffer = {:#x}", (*new_args_us_pointer).Buffer.as_ptr() as usize));
+            //debug_info_msg!(format!("__warg = {:#x}", new_args_us_pointer as usize));
+            //debug_info_msg!(format!("__warg buffer = {:#x}", (*new_args_us_pointer).Buffer.as_ptr() as usize));
         }
 
         
@@ -426,7 +451,7 @@ impl PE_Loader {
         let mut data_section_ptr = 0;
 
         unsafe {
-            let kernel_base_handle = get_dll_base_address("kernelbase.dll");
+            let kernel_base_handle = get_dll_base_address("kernelbase.dll").unwrap();
 
             let dos_headers_ptr = kernel_base_handle as *const IMAGE_DOS_HEADER;
             let nt_headers_ptr = (kernel_base_handle as usize + (*dos_headers_ptr).e_lfanew as usize) as *const IMAGE_NT_HEADERS;
@@ -462,48 +487,49 @@ impl PE_Loader {
                 break;
             }
 
-            
+            for dll in self.used_dlls.iter() {
+                debug_info_msg!(format!("Iteration into {}!", dll));
+                //_wcmdln;__wargv;__p__wcmdln;__p___wargv
+                type WCHAR = u16;
+                type PWCHAR = *mut WCHAR;
+                type PPWCHAR = *mut PWCHAR;
 
-            //_wcmdln;__wargv;__p__wcmdln;__p___wargv
-            type WCHAR = u16;
-            type PWCHAR = *mut WCHAR;
-            type PPWCHAR = *mut PWCHAR;
+                let mut func_info = get_dll_proc_address(dll, "__p__wcmdln");
+                if func_info.address.is_some() {
+                    //#[cfg(feature = "verbose")]
+                    debug_ok_msg!(format!("Patching {}!{} at {:#x}", dll, "__p__wcmdln", func_info.address.unwrap()));
+                    let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(func_info.address.unwrap());
+                    let wargv = p_wcmdln() as PPWCHAR;
+                    *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+                }
 
-            let mut address = get_dll_proc_address("ucrtbase.dll", "__p__wcmdln");
-            if address != 0 {
-                #[cfg(feature = "verbose")]
-                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "ucrtbase.dll", "__p__wcmdln", address));
-                let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(address);
-                let wargv = p_wcmdln() as PPWCHAR;
-                *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+                func_info = get_dll_proc_address(dll, "_wcmdln");
+                if func_info.address.is_some() {
+                    #[cfg(feature = "verbose")]
+                    debug_ok_msg!(format!("Patching {}!{} at {:#x}", dll, "_wcmdln", func_info.address.unwrap()));
+                    let wargv = func_info.address.unwrap() as PPWCHAR;
+                    *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+                }
+
+                func_info = get_dll_proc_address(dll, "__wargv");
+                if func_info.address.is_some() {
+                    #[cfg(feature = "verbose")]
+                    debug_ok_msg!(format!("Patching {}!{} at {:#x}", dll, "__wargv", func_info.address.unwrap()));
+                    let wargv = func_info.address.unwrap() as PPWCHAR;
+                    *wargv = null_mut();
+                }
+
+                func_info = get_dll_proc_address(dll, "__p___wargv");
+                if func_info.address.is_some() {
+                    //#[cfg(feature = "verbose")]
+                    debug_ok_msg!(format!("Patching {}!{} at {:#x}", dll, "__p___wargv", func_info.address.unwrap()));
+                    let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(func_info.address.unwrap());
+                    let wargv = p_wcmdln() as PPWCHAR;
+                    *wargv = (*new_args_us_pointer).Buffer.as_ptr();
+                }
+
+                //TODO patch GetCommandLineA & handle _acmdln;__argv;__p__acmdln;__p___argv
             }
-
-            address = get_dll_proc_address("msvcrt.dll", "_wcmdln");
-            if address != 0 {
-                #[cfg(feature = "verbose")]
-                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "msvcrt.dll", "_wcmdln", address));
-                let wargv = address as PPWCHAR;
-                *wargv = (*new_args_us_pointer).Buffer.as_ptr();
-            }
-
-            address = get_dll_proc_address("msvcrt.dll", "__wargv");
-            if address != 0 {
-                #[cfg(feature = "verbose")]
-                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "msvcrt.dll", "__wargv", address));
-                let wargv = address as PPWCHAR;
-                *wargv = null_mut();
-            }
-
-            address = get_dll_proc_address("ucrtbase.dll", "__p___wargv");
-            if address != 0 {
-                #[cfg(feature = "verbose")]
-                debug_ok_msg!(format!("Patching {}!{} at {:#x}", "ucrtbase.dll", "__p___wargv", address));
-                let p_wcmdln: unsafe extern "system" fn() -> usize = core::mem::transmute(address);
-                let wargv = p_wcmdln() as PPWCHAR;
-                *wargv = (*new_args_us_pointer).Buffer.as_ptr();
-            }
-
-            //TODO patch GetCommandLineA & handle _acmdln;__argv;__p__acmdln;__p___argv
         }
 
         true
@@ -610,11 +636,11 @@ impl PE_Loader {
                     let mut msvcrt_used = false;
                     let mut ucrtbase_used = false;
 
-                    if self.loaded_dlls.contains(&lc!("msvcrt.dll")) {
+                    if self.used_dlls.contains(&lc!("msvcrt.dll")) {
                         msvcrt_used = true;
                     }
 
-                    if self.loaded_dlls.contains(&lc!("ucrtbase.dll")) {
+                    if self.used_dlls.contains(&lc!("ucrtbase.dll")) {
                         ucrtbase_used = true;
                     }
 
@@ -627,35 +653,35 @@ impl PE_Loader {
                 }
 
 
-                // let mut thread_handle: HANDLE = 0;
-                // let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, entry_point);
-                // if res != STATUS_SUCCESS {
-                //     debug_error_msg!("Failed to start thread!");
-                //     return (false, None);
-                // }
-
-                // self.infos.thread_handle = thread_handle;
-
-                // //std::thread::sleep(std::time::Duration::from_secs(5));
-                // res =  self.ntdll.nt_wait_for_single_object(thread_handle);
-                // if res != STATUS_SUCCESS {
-                //     debug_error_msg!("Failed to wait!");
-                //     return (false,None);
-                // }
-
-                let func: extern "C" fn() -> u32 = core::mem::transmute(entry_point);
-            // func();
-
-                let _ = std::thread::spawn(move || {
-                    func();
-                });
-
-                while ! THREAD_ENDED {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                let mut thread_handle: HANDLE = 0;
+                let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, entry_point);
+                if res != STATUS_SUCCESS {
+                    debug_error_msg!("Failed to start thread!");
+                    return (false, None);
                 }
+
+                self.infos.thread_handle = thread_handle;
+
+                //std::thread::sleep(std::time::Duration::from_secs(5));
+                res =  self.ntdll.nt_wait_for_single_object(thread_handle);
+                if res != STATUS_SUCCESS {
+                    debug_error_msg!("Failed to wait!");
+                    return (false,None);
+                }
+
+            //     let func: extern "C" fn() -> u32 = core::mem::transmute(entry_point);
+            // // func();
+
+            //     let _ = std::thread::spawn(move || {
+            //         func();
+            //     });
+
+            //     while ! THREAD_ENDED {
+            //         std::thread::sleep(std::time::Duration::from_millis(100));
+            //     }
                 
-                //let _ = handle.join();
-                //handle.join().expect("Couldn't join on the associated thread");
+            //     //let _ = handle.join();
+            //     //handle.join().expect("Couldn't join on the associated thread");
 
                 if self.options.collect_output {
                     while let Some(buff) = self.redirector.read_outputs() {
@@ -682,21 +708,54 @@ impl PE_Loader {
 
         #[cfg(feature = "verbose")]
         debug_info_msg!(format!("Cleaning Handles"));
-        let mut res = self.ntdll.nt_close(self.infos.thread_handle);
+        let res = self.ntdll.nt_close(self.infos.thread_handle);
         if res != STATUS_SUCCESS {
             debug_error_msg!("Failed to close Thread Handle!");
             return false;
         }
 
-        #[cfg(feature = "verbose")]
-        debug_info_msg!(format!("Cleaning Memory"));
-        let mut address = self.infos.pe_base_address as usize;
-        let mut size =  0;
-        res = self.ntdll.nt_free_virtual_memory(-1, &mut address,  &mut size, MEM_RELEASE);
-        if res != STATUS_SUCCESS {
-            crate::debug_error_msg!(format!("Failed to free memory : {:#x}!", res as usize));
-            return false;
+
+        //release dll loaded
+        for dll_name in self.loaded_dlls.iter() {
+            let address = get_dll_base_address(dll_name);
+            if address.is_some() {
+                #[cfg(feature = "verbose")]
+                debug_info_msg!(format!("Freeing {}", dll_name));
+                if unsafe { FreeLibrary(address.unwrap()) } != TRUE {
+                    #[cfg(feature = "verbose")]
+                    debug_error_msg!(format!("Freeing {} failed !", dll_name));
+                }
+            }
         }
+
+        //sometimes crash the app :s
+
+        // //revert permission to RW
+        // #[cfg(feature = "verbose")]
+        // debug_info_msg!(format!("Reverting Memory to RW"));
+        // let mut address = self.infos.pe_base_address as usize;
+        // let mut size =  self.infos.pe_size;
+        // let mut old_protection = 0u32;
+        // let res =  self.ntdll.nt_protect_virtual_memory(-1, &mut address, &mut size, PAGE_READWRITE, &mut old_protection);
+        // if res != STATUS_SUCCESS {
+        //     crate::debug_error_msg!("Failed to revert memory protection of allocateed space!");
+        //     return false;
+        // }
+        
+        // //simply erase data
+        // #[cfg(feature = "verbose")]
+        // debug_info_msg!(format!("Erasing Memory"));
+        // unsafe { ptr::write_bytes(address as *mut u8, 0, self.infos.pe_size) };
+
+        // #[cfg(feature = "verbose")]
+        // debug_info_msg!(format!("releasing Memory"));
+        // let mut address = self.infos.pe_base_address as usize;
+        // let mut size =  self.infos.pe_size;
+        // let res = self.ntdll.nt_free_virtual_memory(-1, &mut address,  &mut size, MEM_RELEASE);
+        // if res != STATUS_SUCCESS {
+        //     crate::debug_error_msg!(format!("Failed to free memory : {:#x}!", res as usize));
+        //     return false;
+        // }
 
         debug_success_msg!(format!("Done."));
         true

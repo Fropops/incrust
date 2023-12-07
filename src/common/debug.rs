@@ -1,9 +1,4 @@
 #[macro_export]
-macro_rules! print_debug {
-    ($($arg:tt)*) => (if ::std::cfg!(debug_assertions) { ::std::println!($($arg)*); })
-}
-
-#[macro_export]
 macro_rules! dbg {
     () => {
         eprintln!("{}", format!("[{}:{}]", file!(), line!()));
