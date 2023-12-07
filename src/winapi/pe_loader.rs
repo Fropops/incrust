@@ -3,7 +3,7 @@ use std::ptr::{null, null_mut};
 
 use crate::common::output::OutputRedirector;
 use crate::common::helpers::ascii_bytes_to_string;
-use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, THREAD_ALL_ACCESS, MEM_RELEASE, DLL_PROCESS_DETACH};
+use crate::winapi::constants::{MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_ABSOLUTE, IMAGE_REL_BASED_HIGHLOW, IMAGE_ORDINAL_FLAG, PAGE_WRITECOPY, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, MEM_RELEASE, DLL_PROCESS_DETACH};
 use crate::winapi::dll_functions::{get_dll_proc_address, get_dll_proc_address_by_ordinal_index};
 use crate::winapi::kernel32::FlushInstructionCache;
 use crate::winapi::ntdll::{RtlExitUserThread, RtlCreateUnicodeString};
@@ -22,19 +22,15 @@ use super::structs::{IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY, IMAGE_IMPORT_DE
 use super::types::{PCSTR, P_IMAGE_TLS_DIRECTORY, P_FN_IMAGE_TLS_CALLBACK};
 use super::{types::{IMAGE_NT_HEADERS, IMAGE_OPTIONAL_HEADER}, structs::IMAGE_DOS_HEADER, constants::{IMAGE_DOS_SIGNATURE, IMAGE_NT_SIGNATURE, IMAGE_NT_OPTIONAL_HDR_MAGIC, IMAGE_FILE_DLL, STATUS_SUCCESS}};
 
-static mut MSVCRT_USED: bool = false;
-static mut UCRTBASE_USED: bool = false;
-
 static mut THREAD_ENDED: bool = false;
-fn hook_exit(statuscode: i32)
+
+fn hook_exit(statuscode: u32)
 {
     unsafe {
         THREAD_ENDED = true;
-	RtlExitUserThread(0);
+	    RtlExitUserThread(statuscode);
     }
 }
-
-
 
 
 #[repr(C)]
@@ -96,6 +92,7 @@ pub struct PE_Loader {
     options: PE_Options,
     ntdll: SyscallWrapper,
     redirector: OutputRedirector,
+    loaded_dlls: Vec<String>,
 }
 
 impl PE_Loader {
@@ -105,7 +102,8 @@ impl PE_Loader {
             ntdll: ntdll,
             options: options,
             pe_bytes: vec![0],
-            redirector: redirector
+            redirector: redirector,
+            loaded_dlls: vec![],
         }
     }
 
@@ -255,10 +253,6 @@ impl PE_Loader {
     }
 
     fn adapt_iat(&mut self) -> bool {
-        unsafe {
-            MSVCRT_USED = false;
-            UCRTBASE_USED = false;
-        }
 
         debug_info_msg!(format!("Adapting Import Adress Table ..."));
         let mut img_desc_ptr : *const IMAGE_IMPORT_DESCRIPTOR;
@@ -275,15 +269,13 @@ impl PE_Loader {
 
                 let dll_name_address = (self.infos.pe_base_address as usize + (*img_desc_ptr).Name as usize) as *const u8;
                 let dll_name_pcstr = PCSTR::from_raw(dll_name_address);
-                let dll_name = dll_name_pcstr.to_string().unwrap();
+                let dll_name = dll_name_pcstr.to_string().unwrap().to_lowercase();
 
-                if dll_name.to_lowercase() == "msvcrt.dll" {
-                    MSVCRT_USED = true;
+                if !self.loaded_dlls.contains(&dll_name) {
+                    self.loaded_dlls.push(dll_name.clone());
+                    debug_info!(&dll_name);
                 }
 
-                if dll_name.to_lowercase() == "ucrtbase.dll" {
-                    UCRTBASE_USED = true;
-                }
 
                 let int_thunk_rva = (*img_desc_ptr).Anonymous.OriginalFirstThunk as usize;
 		        let iat_thunk_rva = (*img_desc_ptr).FirstThunk as usize;
@@ -615,7 +607,23 @@ impl PE_Loader {
                 let entry_point = self.infos.pe_base_address as usize + (*self.infos.nt_header_ptr).OptionalHeader.AddressOfEntryPoint as usize;
 
                 if self.options.collect_output {
-                    self.redirector.redirect_outputs(MSVCRT_USED, UCRTBASE_USED);
+                    let mut msvcrt_used = false;
+                    let mut ucrtbase_used = false;
+
+                    if self.loaded_dlls.contains(&lc!("msvcrt.dll")) {
+                        msvcrt_used = true;
+                    }
+
+                    if self.loaded_dlls.contains(&lc!("ucrtbase.dll")) {
+                        ucrtbase_used = true;
+                    }
+
+                    let sub: Vec<&String> = self.loaded_dlls.iter().filter(|x| x.starts_with(&lc!("api-ms-win-crt-"))).collect();
+                    if sub.len() != 0 {
+                        ucrtbase_used = true;
+                    }
+
+                    self.redirector.redirect_outputs(msvcrt_used, ucrtbase_used);
                 }
 
 

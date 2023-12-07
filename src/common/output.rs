@@ -1,5 +1,5 @@
 // adapted from https://www.coresecurity.com/core-labs/articles/running-pes-inline-without-console
-use std::{mem::{self, size_of}, ptr::{null_mut, write_bytes, null}, default};
+use std::{mem::{self, size_of}, ptr::{null_mut, write_bytes}};
 
 use crate::winapi::{types::HANDLE, dll_functions::{get_dll_proc_address, get_peb}, kernel32::{SECURITY_ATTRIBUTES, CreatePipe, CloseHandle, PeekNamedPipe, ReadFile}, constants::{TRUE, NULL, FALSE}};
 
@@ -284,7 +284,7 @@ impl OutputRedirector {
             }
 
             self.handles.saved_generic_stdout_handle = Some(get_std_output_handle());
-            self.handles.saved_generic_stderr_handle = Some(get_std_output_handle());
+            self.handles.saved_generic_stderr_handle = Some(get_std_err_handle());
 
             set_std_out_handle(self.write_pipe_handle);
             set_std_err_handle(self.write_pipe_handle);
@@ -344,9 +344,9 @@ impl OutputRedirector {
     }
 }
 
-// impl Drop for OutputRedirector {
-//     fn drop(&mut self) {
-//         unsafe { CloseHandle(self.read_pipe_handle) };
-//         unsafe { CloseHandle(self.write_pipe_handle) };
-//     }
-// }
+impl Drop for OutputRedirector {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.read_pipe_handle) };
+        unsafe { CloseHandle(self.write_pipe_handle) };
+    }
+}
