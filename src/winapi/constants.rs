@@ -112,10 +112,10 @@ pub const IMAGE_REL_BASED_DIR64: BASE_RELOCATION_TYPE = 10;
 
 #[allow(dead_code)]
 #[cfg(target_arch = "x86")]
-pub const IMAGE_ORDINAL_FLAG32: u32 =  2147483648u32;
+pub const IMAGE_ORDINAL_FLAG32: usize =  2147483648usize;
 #[allow(dead_code)]
 #[cfg(target_arch = "x86")]
-pub const IMAGE_ORDINAL_FLAG: u32 =  IMAGE_ORDINAL_FLAG32;
+pub const IMAGE_ORDINAL_FLAG: usize =  IMAGE_ORDINAL_FLAG32;
 
 #[allow(dead_code)]
 #[cfg(target_arch = "x86_64")]
