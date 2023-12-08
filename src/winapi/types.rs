@@ -301,3 +301,7 @@ pub type P_IMAGE_TLS_DIRECTORY = *mut IMAGE_TLS_DIRECTORY;
 
 #[allow(non_camel_case_types)]
 pub type P_FN_IMAGE_TLS_CALLBACK = unsafe extern "system" fn(dllhandle: *mut u8, reason: u32, reserved: *mut u8);
+
+#[allow(non_camel_case_types)]
+pub type P_FN_DLL_MAIN = unsafe extern "system" fn(HINSTANCE, u32, *mut u8);
+//typedef BOOL(WINAPI* DLLMAIN)(HINSTANCE, DWORD, LPVOID);

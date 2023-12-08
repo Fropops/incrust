@@ -18,8 +18,8 @@ use super::constants::{IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_DIRECTORY_ENTRY_BASER
 use super::dll_functions::get_dll_base_address;
 use super::kernel32::GetCommandLineW;
 use super::nt::syscall_wrapper::SyscallWrapper;
-use super::structs::{IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY, IMAGE_IMPORT_DESCRIPTOR};
-use super::types::{PCSTR, P_IMAGE_TLS_DIRECTORY, P_FN_IMAGE_TLS_CALLBACK};
+use super::structs::{IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY, IMAGE_IMPORT_DESCRIPTOR, IMAGE_EXPORT_DIRECTORY};
+use super::types::{PCSTR, P_IMAGE_TLS_DIRECTORY, P_FN_IMAGE_TLS_CALLBACK, P_FN_DLL_MAIN, HINSTANCE};
 use super::{types::{IMAGE_NT_HEADERS, IMAGE_OPTIONAL_HEADER}, structs::IMAGE_DOS_HEADER, constants::{IMAGE_DOS_SIGNATURE, IMAGE_NT_SIGNATURE, IMAGE_NT_OPTIONAL_HDR_MAGIC, IMAGE_FILE_DLL, STATUS_SUCCESS}};
 
 #[repr(C)]
@@ -607,50 +607,51 @@ impl PE_Loader {
         //sometimes crash the app :s
 
         //revert permission to RW
-        // #[cfg(feature = "verbose")]
-        // debug_info_msg!(format!("Reverting Memory to RW"));
-        // let mut address = self.infos.pe_base_address as usize;
-        // let mut size =  self.infos.pe_size;
-        // let mut old_protection = 0u32;
-        // let res =  self.ntdll.nt_protect_virtual_memory(-1, &mut address, &mut size, PAGE_READWRITE, &mut old_protection);
-        // if res != STATUS_SUCCESS {
-        //     crate::debug_error_msg!("Failed to revert memory protection of allocateed space!");
-        //     return false;
-        // }
+        #[cfg(feature = "verbose")]
+        debug_info_msg!(format!("Reverting Memory to RW"));
+        let mut address = self.infos.pe_base_address as usize;
+        let mut size =  self.infos.pe_size;
+        let mut old_protection = 0u32;
+        let res =  self.ntdll.nt_protect_virtual_memory(-1, &mut address, &mut size, PAGE_READWRITE, &mut old_protection);
+        if res != STATUS_SUCCESS {
+            crate::debug_error_msg!("Failed to revert memory protection of allocateed space!");
+            return false;
+        }
         
         //simply erase data
-        // #[cfg(feature = "verbose")]
-        // debug_info_msg!(format!("Erasing Memory"));
-        // unsafe { std::ptr::write_bytes(address as *mut u8, 0, self.infos.pe_size) };
+        #[cfg(feature = "verbose")]
+        debug_info_msg!(format!("Erasing Memory"));
+        unsafe { std::ptr::write_bytes(address as *mut u8, 0, self.infos.pe_size) };
 
-        // #[cfg(feature = "verbose")]
-        // debug_info_msg!(format!("releasing Memory"));
-        // let mut address = self.infos.pe_base_address as usize;
-        // let mut size =  self.infos.pe_size;
-        // let res = self.ntdll.nt_free_virtual_memory(-1, &mut address,  &mut size, crate::winapi::constants::MEM_RELEASE);
-        // if res != STATUS_SUCCESS {
-        //     crate::debug_error_msg!(format!("Failed to free memory : {:#x}!", res as usize));
-        //     return false;
-        // }
+        #[cfg(feature = "verbose")]
+        debug_info_msg!(format!("releasing Memory"));
+        let mut address = self.infos.pe_base_address as usize;
+        let mut size =  self.infos.pe_size;
+        let res = self.ntdll.nt_free_virtual_memory(-1, &mut address,  &mut size, crate::winapi::constants::MEM_RELEASE);
+        if res != STATUS_SUCCESS {
+            crate::debug_error_msg!(format!("Failed to free memory : {:#x}!", res as usize));
+            return false;
+        }
 
         debug_success_msg!(format!("Done."));
         true
     }
 
+    #[allow(unused)]
     pub fn execute_exe(&mut self, pe_bytes:Vec<u8>, redirect_output: bool, patch_exit_functions: bool, args: Option<String>) -> (bool, Option<String>) {
         let mut success : bool = true;
         let mut redirector = OutputRedirector::new();
         self.patch_exit_functions = patch_exit_functions;
 
-        if self.infos.is_dll {
-            debug_error_msg!("PE is a dll");
-            return (false, None)
-        }
-
         //preparing
         if !self.inject(pe_bytes) {
             debug_error_msg!("Failed to inject PE.");
             return (false ,None);
+        }
+
+        if self.infos.is_dll {
+            debug_error_msg!("PE is a dll");
+            return (false, None)
         }
 
         //Patching args
@@ -742,5 +743,107 @@ impl PE_Loader {
         } else {
             (success, None)
         }
+    }
+
+    fn fetch_exported_function_address(&mut self, func_name: Option<String>) -> Option<usize> {
+        if func_name.is_none() {
+            return None;
+        }
+
+        let func = func_name.unwrap();
+
+        unsafe {
+            let img_exp_ptr = (self.infos.pe_base_address as usize + (*self.infos.entry_export_data_dir_ptr).VirtualAddress as usize) as *const IMAGE_EXPORT_DIRECTORY; 
+            let function_address_array = (self.infos.pe_base_address as usize + (*img_exp_ptr).AddressOfFunctions as usize) as usize;
+            let mut function_name_array = (self.infos.pe_base_address as usize + (*img_exp_ptr).AddressOfNames as usize) as usize;
+            let mut function_ordinals_array = (self.infos.pe_base_address as usize + (*img_exp_ptr).AddressOfNameOrdinals as usize) as usize;
+
+            for _index in 0..(*img_exp_ptr).NumberOfNames { 
+                let name_offest: u32 = *(function_name_array as *const u32);
+
+                let fun_name = std::ffi::CStr::from_ptr(
+                    (self.infos.pe_base_address as usize + name_offest as usize) as *const i8
+                ).to_str().unwrap();
+
+                debug_info!(fun_name);
+
+                let fun_ord = *(function_ordinals_array as *const u16);
+                let address_ptr = function_address_array + fun_ord as usize * (std::mem::size_of::<u32>() as usize);
+    
+                if fun_name.to_lowercase() == func.to_lowercase() {
+                    return Some(self.infos.pe_base_address as usize + *(address_ptr as *const u32) as usize);
+                }
+
+                function_name_array = function_name_array + std::mem::size_of::<u32>() as usize;
+                function_ordinals_array = function_ordinals_array + std::mem::size_of::<u16>() as usize;
+            }
+        }
+        None
+    }
+
+    #[allow(unused)]
+    pub fn execute_dll(&mut self, pe_bytes:Vec<u8>, entry_function: Option<String>) -> bool {
+        let mut success : bool = true;
+        self.patch_exit_functions = false;
+
+        //preparing
+        if !self.inject(pe_bytes) {
+            debug_error_msg!("Failed to inject PE.");
+            return false;
+        }
+
+        if !self.infos.is_dll {
+            debug_error_msg!("PE is an exe");
+            return false;
+        }
+
+        unsafe {
+            FlushInstructionCache(-1 as HANDLE, null_mut(), 0);
+        }
+
+        if !self.execute_tls_callbacks(true) {
+            return false;
+        }
+
+        let func_address = self.fetch_exported_function_address(entry_function.clone());
+        if func_address.is_none() && entry_function.is_some() {
+            debug_error_msg!(format!("Entry Function {} not found !", entry_function.unwrap()));
+            return false;
+        }
+
+        unsafe {
+            let entry_point = self.infos.pe_base_address as usize + (*self.infos.nt_header_ptr).OptionalHeader.AddressOfEntryPoint as usize;
+
+            let dll_main = transmute::<usize, P_FN_DLL_MAIN>(entry_point);
+            (dll_main)(self.infos.pe_base_address as HINSTANCE, DLL_PROCESS_ATTACH , null_mut());
+
+            if func_address.is_some() {
+                let mut thread_handle: HANDLE = 0;
+                let mut res =  self.ntdll.nt_create_thread_ex(&mut thread_handle, THREAD_ALL_ACCESS,-1, func_address.unwrap());
+                if res != STATUS_SUCCESS {
+                    debug_error_msg!("Failed to start thread!");
+                    return false;
+                }
+
+                self.infos.thread_handle = thread_handle;
+
+                //std::thread::sleep(std::time::Duration::from_secs(5));
+                res =  self.ntdll.nt_wait_for_single_object(thread_handle);
+                if res != STATUS_SUCCESS {
+                    debug_error_msg!("Failed to wait!");
+                    return false;
+                }
+            }
+        }
+
+        let _ = self.execute_tls_callbacks(false);
+
+        //cleaning
+        if !self.clean() {
+            debug_error_msg!("Failed to clean PE.");
+            success = false;
+        }
+        
+        success
     }
 }
