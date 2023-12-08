@@ -202,15 +202,20 @@ impl PE_Loader {
                             let address = (self.infos.pe_base_address as usize + (*image_base_relocation_ptr).VirtualAddress as usize + reloc_offset as usize) as *mut usize;
                             #[cfg(feature = "verbose")]
                             let before = *address;
-                            (*address) = (*address) + pe_offset;
+                            //(*address) = (*address) + pe_offset;
+                            let existing = core::ptr::read(address);
+                            core::ptr::write(address as *mut usize, existing + pe_offset as usize);
                             #[cfg(feature = "verbose")]
                             let after = *address;
                             #[cfg(feature = "verbose")]
                             debug_info_msg!(format!("Address {:#x} fixed from {:#x} to {:#x} [offset = {:#x}, pe_offset = {:#x}]", (*address) as usize, before as usize, after as usize, reloc_offset as usize, pe_offset as usize));
                         },
                         IMAGE_REL_BASED_HIGHLOW => {
+                            //let finaladdress = baseptr as usize + unsafe { (*relocptr).VirtualAddress } as usize + (temp & 0x0fff) as usize;
                             let address = (self.infos.pe_base_address as usize + (*image_base_relocation_ptr).VirtualAddress as usize + reloc_offset as usize) as *mut u32;
-                            (*address) = (*address) + pe_offset as u32;
+                            //(*address) = (*address) + pe_offset as u32;
+                            let existing = core::ptr::read(address);
+                            core::ptr::write(address as *mut u32, existing + pe_offset as u32);
                         },
                         IMAGE_REL_BASED_ABSOLUTE => (),
                         _ => {
