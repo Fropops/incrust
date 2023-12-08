@@ -66,20 +66,21 @@ fn load_exe(pe_bytes: Vec<u8>, args: Option<String>) {
     let mut pe_loader = PE_Loader::new(ntdll);
 
     
-    let res = pe_loader.execute_dll(pe_bytes.clone(),  args);
+    // let res = pe_loader.execute_dll(pe_bytes.clone(),  args);
+    // if !res {
+    //     debug_error_msg!("Failed to execute PE."); 
+    // }
+
+    let (res, output) = pe_loader.execute_exe(pe_bytes.clone(), true, true, args);
     if !res {
         debug_error_msg!("Failed to execute PE."); 
     }
-
-    //let (res, output) = pe_loader.execute_exe(pe_bytes.clone(), true, true, args);
-    // match output {
-    //    None => debug_info_msg!("No output"),
-    //    Some(output) => { 
-    //         let mut file = File::create("output.txt").unwrap();
-    //         write!(file, "{}", output).unwrap();
-    //     }
-    // }
-
-   
+    match output {
+       None => debug_info_msg!("No output"),
+       Some(output) => { 
+            let mut file = File::create("output.txt").unwrap();
+            write!(file, "{}", output).unwrap();
+        }
+    }
 }
 

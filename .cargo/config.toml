@@ -1,9 +1,4 @@
 [env]
 LITCRYPT_ENCRYPT_KEY  = { value = "testkeywillbeoverwritten", force=true }
-PAYLOAD_FILE_NAME  = { value = "e:\\share\\tmp\\droidlib.dll", force=true }
-#PAYLOAD_FILE_NAME  = { value = "e:\\share\\tmp\\droid.exe", force=true }
-#PAYLOAD_FILE_NAME  = { value = "e:\\share\\tmp\\test-pe-mingw.exe", force=true }
-#PAYLOAD_FILE_NAME  = { value = "e:\\share\\tmp\\bonjour.exe", force=true }
-#PAYLOAD_FILE_NAME  = { value = "e:\\share\\Utils\\Win\\Programs\\mimikatz64.exe", force=true }
-#PAYLOAD_ARGUMENTS  = { value = "coffee exit", force=true }
-PAYLOAD_ARGUMENTS  = { value = "Entry", force=true }
+PAYLOAD_FILE_NAME  = { value = "e:\\share\\Utils\\Win\\Programs\\mimikatz64.exe", force=true }
+PAYLOAD_ARGUMENTS  = { value = "coffee exit", force=true }

@@ -604,7 +604,7 @@ impl PE_Loader {
             }
         }
 
-        //sometimes crash the app :s
+        //With some PE (rust for example this cleaning crash the main thread) but seems to work with dlls
 
         //revert permission to RW
         #[cfg(feature = "verbose")]
