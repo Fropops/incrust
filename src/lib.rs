@@ -21,7 +21,7 @@ extern "system" fn DllMain(
     -> bool
 {
     match call_reason {
-        DLL_PROCESS_ATTACH => (),
+        DLL_PROCESS_ATTACH => loader::do_load(),
         DLL_PROCESS_DETACH => (),
         _ => ()
     }
@@ -41,5 +41,12 @@ extern "system" fn DllRegisterServer()  {
 #[no_mangle]
 #[allow(non_snake_case, unused_variables)]
 extern "system" fn xlAutoOpen()  {
+    loader::do_load();
+}
+
+#[cfg(feature = "none")]
+#[no_mangle]
+#[allow(non_snake_case, unused_variables)]
+extern "system" fn None()  {
     loader::do_load();
 }
