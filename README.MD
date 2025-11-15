@@ -92,7 +92,7 @@ or
 ```cmd
 rundll32.exe .\incrustlib.dll,DllRegisterServer
 ```
-
+Tryed to make it work on ATTACH Event (DLL_PROCESS_ATTACH => loader::do_load(),) with no success...
 
 ## x86
 ```shell

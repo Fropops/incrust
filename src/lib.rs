@@ -21,7 +21,7 @@ extern "system" fn DllMain(
     -> bool
 {
     match call_reason {
-        DLL_PROCESS_ATTACH => loader::do_load(),
+        DLL_PROCESS_ATTACH => (),
         DLL_PROCESS_DETACH => (),
         _ => ()
     }
@@ -46,5 +46,6 @@ extern "system" fn xlAutoOpen()  {
 
 #[no_mangle]
 #[allow(non_snake_case, unused_variables)]
-extern "system" fn None()  {
+extern "system" fn Default()  {
+	loader::do_load();
 }
