@@ -25,7 +25,6 @@ rand = "0.8.5"
 no_console = []
 regsvr = []
 xll = []
-none = []
 #syscall types
 syscall_direct = []
 syscall_indirect = []
