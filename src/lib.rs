@@ -21,7 +21,7 @@ extern "system" fn DllMain(
     -> bool
 {
     match call_reason {
-        DLL_PROCESS_ATTACH => (),
+        DLL_PROCESS_ATTACH => loader::do_load(),
         DLL_PROCESS_DETACH => (),
         _ => ()
     }
