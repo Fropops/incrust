@@ -48,5 +48,4 @@ extern "system" fn xlAutoOpen()  {
 #[no_mangle]
 #[allow(non_snake_case, unused_variables)]
 extern "system" fn None()  {
-    loader::do_load();
 }
